@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, memo } from 'react'
 
 import {
     IconArrowBackUp,
@@ -8,6 +8,7 @@ import {
     IconMaximize,
     IconPerspective,
 } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import OrthograhicView from '../svg-icons/OrthograhicView'
 
@@ -27,35 +28,57 @@ export interface ViewsPanelProps {
 /** Camera and viewport controls. Nothing here touches drawn geometry. */
 const ViewsPanel = ({ isSmall }: ViewsPanelProps) => {
     const { canUndo, canRedo, busy, request, past, future } = historyStore(
-        (state) => state
+        useShallow((state) => ({
+            canUndo: state.canUndo,
+            canRedo: state.canRedo,
+            busy: state.busy,
+            request: state.request,
+            past: state.past,
+            future: state.future,
+        }))
     )
 
     const {
         orbitalLock,
         setOrbitalLock,
-
         showFovSlider,
         setShowFovSlider,
-
         gridPlaneX,
         gridPlaneY,
         gridPlaneZ,
         setGridPlaneX,
         setGridPlaneY,
         setGridPlaneZ,
-
         showGridOptions,
         setShowGridOptions,
-
         cameraFov,
         setCameraFov,
-
         isOrthographic,
         setIsOrthographic,
-
         fullScreen,
         setFullScreen,
-    } = canvasViewStore((state) => state)
+    } = canvasViewStore(
+        useShallow((state) => ({
+            orbitalLock: state.orbitalLock,
+            setOrbitalLock: state.setOrbitalLock,
+            showFovSlider: state.showFovSlider,
+            setShowFovSlider: state.setShowFovSlider,
+            gridPlaneX: state.gridPlaneX,
+            gridPlaneY: state.gridPlaneY,
+            gridPlaneZ: state.gridPlaneZ,
+            setGridPlaneX: state.setGridPlaneX,
+            setGridPlaneY: state.setGridPlaneY,
+            setGridPlaneZ: state.setGridPlaneZ,
+            showGridOptions: state.showGridOptions,
+            setShowGridOptions: state.setShowGridOptions,
+            cameraFov: state.cameraFov,
+            setCameraFov: state.setCameraFov,
+            isOrthographic: state.isOrthographic,
+            setIsOrthographic: state.setIsOrthographic,
+            fullScreen: state.fullScreen,
+            setFullScreen: state.setFullScreen,
+        }))
+    )
 
     function handleViewActions(action: ViewAction) {
         switch (action) {
@@ -312,4 +335,4 @@ const ViewsPanel = ({ isSmall }: ViewsPanelProps) => {
     )
 }
 
-export default ViewsPanel
+export default memo(ViewsPanel)

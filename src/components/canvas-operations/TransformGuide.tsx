@@ -1,7 +1,8 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, memo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
+import { useShallow } from 'zustand/react/shallow'
 
 import { historyBusy, pushHistory } from '../../helpers/historyCapture'
 import {
@@ -37,10 +38,14 @@ function forEachMaterial(
 const TransformGuide = () => {
     const { camera, pointer, raycaster, scene, gl, invalidate } = useThree()
     const { axisMode, pointerType, transformMode } = canvasDrawStore(
-        (state) => state
+        useShallow((state) => ({
+            axisMode: state.axisMode,
+            pointerType: state.pointerType,
+            transformMode: state.transformMode,
+        }))
     )
 
-    const { transformStyle } = editorPrefsStore((state) => state)
+    const transformStyle = editorPrefsStore((state) => state.transformStyle)
     const setTarget = transformTargetStore((state) => state.setTarget)
     const setReleaseSelection = transformTargetStore(
         (state) => state.setReleaseSelection
@@ -418,4 +423,4 @@ const TransformGuide = () => {
     return null
 }
 
-export default TransformGuide
+export default memo(TransformGuide)

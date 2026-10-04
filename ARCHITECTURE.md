@@ -349,38 +349,9 @@ explicit.
 | `useTransformTargetStore` | the seam between the canvas and the joystick                          |
 | `useJoystickCameraStore`  | where each world axis points on screen. **Not zustand**               |
 
-### The one performance cost you need to know
-
-Every consumer reads state like this:
-
-```ts
-const { penActive, strokeWidth } = canvasDrawStore((state) => state)
-```
-
-The selector returns the whole state object, so it is a new reference on every
-change.
-
-```
-  move the width slider
-        │
-        ▼
-  canvasDrawStore changes
-        │
-        ├──▶ DrawLine re-renders
-        ├──▶ ToolPanel re-renders
-        ├──▶ PenOptionsPanel re-renders
-        ├──▶ ViewsPanel re-renders
-        └──▶ all four group modals re-render
-```
-
-None of those needed the width. This is the single biggest structural limit on
-drawing responsiveness, and fixing it does not require touching any geometry
-code. Narrow the selectors.
-
-`useJoystickCameraStore` is the deliberate exception. The camera publishes on
-every frame it moves. Routing that through React would re-render the joystick
-sixty times a second to change a few SVG attributes, so it is a plain module
-with a listener set that writes those attributes straight to the DOM.
+`useJoystickCameraStore` is a plain module with a listener set, not a
+zustand store. The camera publishes whenever it moves, and the joystick
+writes the resulting SVG attributes straight to the DOM.
 
 ---
 
@@ -645,7 +616,6 @@ gesture and scroll suppression. Do not remove them from markup.
 | Change joystick speed          | the table in section 9                                                            |
 | Add a new guide surface type   | a component in `canvas-operations/`, a `userData.type`, `config/objectsConfig.ts` |
 | Change when or what gets saved | `db/storage.ts`, and the call sites listed in section 7                           |
-| Fix a re-render storm          | narrow the zustand selector, section 6                                            |
 | Add a keyboard shortcut        | the `keydown` effect in `Editor.tsx`                                              |
 | Understand a raycast hit       | `isLineMesh` and `isGuideMesh` in `types/domain.ts`                               |
 
@@ -682,8 +652,6 @@ An honest list. Nothing here is a surprise waiting to be discovered.
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | **Merge does not persist**                   | A merged mesh has no samples, so nothing can rebuild it. Needs a storage format change. Nothing in the UI triggers it today. |
 | **Non-uniform scale on a rotated selection** | Transforms are stored as position, rotation and scale, and a sheared matrix cannot be decomposed into those three.           |
-| **Whole-store subscriptions**                | Section 6. The biggest ceiling on responsiveness.                                                                            |
-| **Components declared inside renders**       | Eight of them. React remounts the subtree instead of updating it. ESLint flags each one.                                     |
 | **Guide drawing state in plain `let`**       | Not refs, so a re-render mid-stroke wipes the in-progress guide.                                                             |
 | **Unused vertex colours**                    | Four floats per vertex that no stroke material reads. Enable `vertexColors` or drop the attribute.                           |
 | **The ribbon builder is duplicated**         | Roughly 150 lines, four near-identical copies, already drifting.                                                             |

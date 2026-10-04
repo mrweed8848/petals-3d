@@ -1,6 +1,7 @@
-import { useEffect } from 'react'
+import { memo, useCallback, useEffect } from 'react'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
+import { useShallow } from 'zustand/react/shallow'
 
 import { canvasViewStore } from '../../hooks/useCanvasViewStore'
 import { canvasDrawStore } from '../../hooks/useCanvasDrawStore'
@@ -20,33 +21,92 @@ import { saveWholeScene } from '../../db/storage'
 import { generateScene } from '../../helpers/drawHelper'
 import { isGuideMesh, isLineMesh, type Group } from '../../types/domain'
 
-export default function CanvasOperations() {
+/** Disposes meshes the eraser marked, once per scene change. */
+function ClearRemovedObjects() {
     const { scene, gl } = useThree()
 
-    const {
-        setPlane,
-        eraseGuide,
-        selectLines,
-        selectGuide,
-        highlighted,
-        setDrawGuide,
-        setPenActive,
-        setEraseGuide,
-        bendPlaneGuide,
-        setHighlighted,
-        loftGuidePlane,
-        setBendPlaneGuide,
-        setLoftGuidePlane,
-        setGenerateLoftSurface,
-        dynamicDrawingPlaneMesh,
-        setDynamicDrawingPlaneMesh,
-    } = canvasDrawStore((state) => state)
+    useEffect(() => {
+        const { highlighted, setHighlighted, setEraseGuide } =
+            canvasDrawStore.getState()
+
+        const meshes: THREE.Mesh[] = []
+        const selectedObjects = Array.from(highlighted)
+
+        scene.traverse((child) => {
+            if (
+                (isLineMesh(child) && child.userData.is_deleted) ||
+                isGuideMesh(child)
+            ) {
+                meshes.push(child)
+            }
+        })
+
+        meshes.forEach((mesh) => {
+            scene.remove(mesh)
+            mesh.geometry.dispose()
+
+            const materials = Array.isArray(mesh.material)
+                ? mesh.material
+                : [mesh.material]
+
+            materials.forEach((mat) => {
+                const withMap = mat as THREE.Material & {
+                    map?: THREE.Texture | null
+                }
+                withMap.map?.dispose()
+                mat.dispose()
+            })
+        })
+
+        gl.info.autoReset = false
+        gl.info.reset()
+
+        selectedObjects.forEach((obj) => {
+            if (!isLineMesh(obj)) return
+
+            const colors = obj.geometry.attributes.color
+            if (!colors) return
+
+            const baseColor = new THREE.Color(obj.userData.color)
+            for (let i = 0; i < colors.count; i++) {
+                colors.setXYZW(
+                    i,
+                    baseColor.r,
+                    baseColor.g,
+                    baseColor.b,
+                    obj.userData.opacity
+                )
+            }
+            colors.needsUpdate = true
+        })
+
+        setHighlighted([])
+        setEraseGuide(false)
+    }, [scene, gl])
+
+    return null
+}
+
+function CanvasOperations() {
+    const { scene } = useThree()
+
+    const { eraseGuide, selectLines, selectGuide, bendPlaneGuide } =
+        canvasDrawStore(
+            useShallow((state) => ({
+                eraseGuide: state.eraseGuide,
+                selectLines: state.selectLines,
+                selectGuide: state.selectGuide,
+                bendPlaneGuide: state.bendPlaneGuide,
+            }))
+        )
 
     const { setActiveScene, setGroupData, groupData } = canvasRenderStore(
-        (state) => state
+        useShallow((state) => ({
+            setActiveScene: state.setActiveScene,
+            setGroupData: state.setGroupData,
+            groupData: state.groupData,
+        }))
     )
-
-    const { setOrbitalLock } = canvasViewStore((state) => state)
 
     // The only wholesale write besides the first save of a new document. It
     // follows the mount rebuild, which purges erased records, so what is on
@@ -64,91 +124,39 @@ export default function CanvasOperations() {
     }, [])
 
     /** A finished guide ribbon becomes the surface the pen now draws onto. */
-    const handleGuideDrawingFinished = (guideMesh: THREE.Mesh) => {
-        setDrawGuide(false)
+    const handleGuideDrawingFinished = useCallback(
+        (guideMesh: THREE.Mesh) => {
+            const draw = canvasDrawStore.getState()
 
-        if (bendPlaneGuide) {
-            setBendPlaneGuide(false)
-            if (dynamicDrawingPlaneMesh) scene.remove(dynamicDrawingPlaneMesh)
-        }
+            draw.setDrawGuide(false)
 
-        if (loftGuidePlane) {
-            setBendPlaneGuide(false)
-            setLoftGuidePlane(false)
-            setGenerateLoftSurface(false)
-            if (dynamicDrawingPlaneMesh) scene.remove(dynamicDrawingPlaneMesh)
-        }
+            if (draw.bendPlaneGuide) {
+                draw.setBendPlaneGuide(false)
+                if (draw.dynamicDrawingPlaneMesh) {
+                    scene.remove(draw.dynamicDrawingPlaneMesh)
+                }
+            }
 
-        setDynamicDrawingPlaneMesh(guideMesh)
-        setPlane(guideMesh)
-        setPenActive(true)
-        setOrbitalLock(true)
-    }
+            if (draw.loftGuidePlane) {
+                draw.setBendPlaneGuide(false)
+                draw.setLoftGuidePlane(false)
+                draw.setGenerateLoftSurface(false)
+                if (draw.dynamicDrawingPlaneMesh) {
+                    scene.remove(draw.dynamicDrawingPlaneMesh)
+                }
+            }
+
+            draw.setDynamicDrawingPlaneMesh(guideMesh)
+            draw.setPlane(guideMesh)
+            draw.setPenActive(true)
+            canvasViewStore.getState().setOrbitalLock(true)
+        },
+        [scene]
+    )
 
     useEffect(() => {
         setActiveScene(scene)
     }, [])
-
-    /** Disposes meshes the eraser marked, once per scene change. */
-    function ClearRemovedObjects() {
-        useEffect(() => {
-            const meshes: THREE.Mesh[] = []
-            const selectedObjects = Array.from(highlighted)
-
-            scene.traverse((child) => {
-                if (
-                    (isLineMesh(child) && child.userData.is_deleted) ||
-                    isGuideMesh(child)
-                ) {
-                    meshes.push(child)
-                }
-            })
-
-            meshes.forEach((mesh) => {
-                scene.remove(mesh)
-                mesh.geometry.dispose()
-
-                const materials = Array.isArray(mesh.material)
-                    ? mesh.material
-                    : [mesh.material]
-
-                materials.forEach((mat) => {
-                    const withMap = mat as THREE.Material & {
-                        map?: THREE.Texture | null
-                    }
-                    withMap.map?.dispose()
-                    mat.dispose()
-                })
-            })
-
-            gl.info.autoReset = false
-            gl.info.reset()
-
-            selectedObjects.forEach((obj) => {
-                if (!isLineMesh(obj)) return
-
-                const colors = obj.geometry.attributes.color
-                if (!colors) return
-
-                const baseColor = new THREE.Color(obj.userData.color)
-                for (let i = 0; i < colors.count; i++) {
-                    colors.setXYZW(
-                        i,
-                        baseColor.r,
-                        baseColor.g,
-                        baseColor.b,
-                        obj.userData.opacity
-                    )
-                }
-                colors.needsUpdate = true
-            })
-
-            setHighlighted([])
-            setEraseGuide(false)
-        }, [scene, gl])
-
-        return null
-    }
 
     const groupsByUuid = new Map<string, Group>(
         groupData.map((g) => [g.uuid, g])
@@ -195,3 +203,5 @@ export default function CanvasOperations() {
         </>
     )
 }
+
+export default memo(CanvasOperations)

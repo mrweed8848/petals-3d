@@ -13,6 +13,7 @@ import {
 } from '@tabler/icons-react'
 import { v4 as uuidv4 } from 'uuid'
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js'
+import { useShallow } from 'zustand/react/shallow'
 
 import Canvas3d from './Canvas3d'
 import ToolPanel from '../tools/ToolPanel'
@@ -63,27 +64,171 @@ function isExempt(target: EventTarget | null): boolean {
     return target.tagName === 'CANVAS'
 }
 
+function DisableBrowserGestures() {
+    useEffect(() => {
+        const preventDefaultTouch = (e: TouchEvent) => {
+            if (isExempt(e.target)) return
+            if (e.touches.length > 1) e.preventDefault()
+        }
+
+        const preventPullToRefresh = (e: TouchEvent) => {
+            if (isExempt(e.target)) return
+            if (window.scrollY === 0) e.preventDefault()
+        }
+
+        const preventDefaultGestures = (e: Event) => {
+            if (isExempt(e.target)) return
+            e.preventDefault()
+        }
+
+        const preventContextMenu = (e: MouseEvent) => {
+            if (isExempt(e.target)) return
+            e.preventDefault()
+        }
+
+        let lastTouchEnd = 0
+        const preventDoubleTapZoom = (e: TouchEvent) => {
+            if (isExempt(e.target)) return
+            const now = Date.now()
+            if (now - lastTouchEnd <= 300) e.preventDefault()
+            lastTouchEnd = now
+        }
+
+        const preventScroll = (e: Event) => {
+            if (isExempt(e.target)) return
+            e.preventDefault()
+            e.stopPropagation()
+        }
+
+        const preventWheel = (e: Event) => {
+            if (isExempt(e.target)) return
+            e.preventDefault()
+        }
+
+        const preventKeyboardScroll = (e: KeyboardEvent) => {
+            if (
+                e.target instanceof Element &&
+                e.target.closest(GESTURE_EXEMPT)
+            ) {
+                return
+            }
+            if (SCROLL_KEYS.includes(e.keyCode)) e.preventDefault()
+        }
+
+        const passive = { passive: false } as const
+
+        document.addEventListener(
+            'gesturestart',
+            preventDefaultGestures,
+            passive
+        )
+        document.addEventListener(
+            'gesturechange',
+            preventDefaultGestures,
+            passive
+        )
+        document.addEventListener('gestureend', preventDefaultGestures, passive)
+
+        document.addEventListener('touchmove', preventPullToRefresh, passive)
+        document.addEventListener('touchstart', preventDefaultTouch, passive)
+        document.addEventListener('touchend', preventDoubleTapZoom, passive)
+
+        document.addEventListener('contextmenu', preventContextMenu)
+
+        document.addEventListener('scroll', preventScroll, passive)
+        document.addEventListener('wheel', preventWheel, passive)
+        document.addEventListener('mousewheel', preventWheel, passive)
+        document.addEventListener('DOMMouseScroll', preventWheel, passive)
+        document.addEventListener('keydown', preventKeyboardScroll, passive)
+
+        document.body.addEventListener('scroll', preventScroll, passive)
+        document.documentElement.addEventListener(
+            'scroll',
+            preventScroll,
+            passive
+        )
+
+        window.scrollTo(0, 0)
+
+        return () => {
+            document.removeEventListener('gesturestart', preventDefaultGestures)
+            document.removeEventListener(
+                'gesturechange',
+                preventDefaultGestures
+            )
+            document.removeEventListener('gestureend', preventDefaultGestures)
+
+            document.removeEventListener('touchmove', preventPullToRefresh)
+            document.removeEventListener('touchstart', preventDefaultTouch)
+            document.removeEventListener('touchend', preventDoubleTapZoom)
+
+            document.removeEventListener('contextmenu', preventContextMenu)
+
+            document.removeEventListener('scroll', preventScroll)
+            document.removeEventListener('wheel', preventWheel)
+            document.removeEventListener('mousewheel', preventWheel)
+            document.removeEventListener('DOMMouseScroll', preventWheel)
+            document.removeEventListener('keydown', preventKeyboardScroll)
+
+            document.body.removeEventListener('scroll', preventScroll)
+            document.documentElement.removeEventListener(
+                'scroll',
+                preventScroll
+            )
+        }
+    }, [])
+
+    return null
+}
+
 const Editor = () => {
     const [isSmall, setIsSmall] = useState(window.innerWidth < 768)
     const [showOptions, setShowOptions] = useState(true)
 
-    const { sceneOptions } = canvasRenderStore((state) => state)
+    const sceneOptions = canvasRenderStore((state) => state.sceneOptions)
 
     const {
         newGroupModal,
         copyGroupModal,
         renameGroupModal,
         deleteGroupModal,
-    } = dashboardStore((state) => state)
+    } = dashboardStore(
+        useShallow((state) => ({
+            newGroupModal: state.newGroupModal,
+            copyGroupModal: state.copyGroupModal,
+            renameGroupModal: state.renameGroupModal,
+            deleteGroupModal: state.deleteGroupModal,
+        }))
+    )
 
     const hasRun = useRef(false)
 
-    const { pointerType, setPointerType } = canvasDrawStore((state) => state)
+    const { pointerType, setPointerType } = canvasDrawStore(
+        useShallow((state) => ({
+            pointerType: state.pointerType,
+            setPointerType: state.setPointerType,
+        }))
+    )
     const { addNewGroup, activeScene, setGroupData, setActiveGroup } =
-        canvasRenderStore((state) => state)
+        canvasRenderStore(
+            useShallow((state) => ({
+                addNewGroup: state.addNewGroup,
+                activeScene: state.activeScene,
+                setGroupData: state.setGroupData,
+                setActiveGroup: state.setActiveGroup,
+            }))
+        )
 
-    const { mode, resolved, setMode } = themeStore((state) => state)
-    const { setCanvasBackgroundColor } = canvasRenderStore((state) => state)
+    const { mode, resolved, setMode } = themeStore(
+        useShallow((state) => ({
+            mode: state.mode,
+            resolved: state.resolved,
+            setMode: state.setMode,
+        }))
+    )
+    const setCanvasBackgroundColor = canvasRenderStore(
+        (state) => state.setCanvasBackgroundColor
+    )
     const historyApplying = historyStore((state) => state.busy)
 
     // Written only on theme change, so a colour picked in the render panel
@@ -230,141 +375,6 @@ const Editor = () => {
             },
             { binary: false, includeCustomExtensions: true }
         )
-    }
-
-    const DisableBrowserGestures = () => {
-        useEffect(() => {
-            const preventDefaultTouch = (e: TouchEvent) => {
-                if (isExempt(e.target)) return
-                if (e.touches.length > 1) e.preventDefault()
-            }
-
-            const preventPullToRefresh = (e: TouchEvent) => {
-                if (isExempt(e.target)) return
-                if (window.scrollY === 0) e.preventDefault()
-            }
-
-            const preventDefaultGestures = (e: Event) => {
-                if (isExempt(e.target)) return
-                e.preventDefault()
-            }
-
-            const preventContextMenu = (e: MouseEvent) => {
-                if (isExempt(e.target)) return
-                e.preventDefault()
-            }
-
-            let lastTouchEnd = 0
-            const preventDoubleTapZoom = (e: TouchEvent) => {
-                if (isExempt(e.target)) return
-                const now = Date.now()
-                if (now - lastTouchEnd <= 300) e.preventDefault()
-                lastTouchEnd = now
-            }
-
-            const preventScroll = (e: Event) => {
-                if (isExempt(e.target)) return
-                e.preventDefault()
-                e.stopPropagation()
-            }
-
-            const preventWheel = (e: Event) => {
-                if (isExempt(e.target)) return
-                e.preventDefault()
-            }
-
-            const preventKeyboardScroll = (e: KeyboardEvent) => {
-                if (
-                    e.target instanceof Element &&
-                    e.target.closest(GESTURE_EXEMPT)
-                ) {
-                    return
-                }
-                if (SCROLL_KEYS.includes(e.keyCode)) e.preventDefault()
-            }
-
-            const passive = { passive: false } as const
-
-            document.addEventListener(
-                'gesturestart',
-                preventDefaultGestures,
-                passive
-            )
-            document.addEventListener(
-                'gesturechange',
-                preventDefaultGestures,
-                passive
-            )
-            document.addEventListener(
-                'gestureend',
-                preventDefaultGestures,
-                passive
-            )
-
-            document.addEventListener(
-                'touchmove',
-                preventPullToRefresh,
-                passive
-            )
-            document.addEventListener(
-                'touchstart',
-                preventDefaultTouch,
-                passive
-            )
-            document.addEventListener('touchend', preventDoubleTapZoom, passive)
-
-            document.addEventListener('contextmenu', preventContextMenu)
-
-            document.addEventListener('scroll', preventScroll, passive)
-            document.addEventListener('wheel', preventWheel, passive)
-            document.addEventListener('mousewheel', preventWheel, passive)
-            document.addEventListener('DOMMouseScroll', preventWheel, passive)
-            document.addEventListener('keydown', preventKeyboardScroll, passive)
-
-            document.body.addEventListener('scroll', preventScroll, passive)
-            document.documentElement.addEventListener(
-                'scroll',
-                preventScroll,
-                passive
-            )
-
-            window.scrollTo(0, 0)
-
-            return () => {
-                document.removeEventListener(
-                    'gesturestart',
-                    preventDefaultGestures
-                )
-                document.removeEventListener(
-                    'gesturechange',
-                    preventDefaultGestures
-                )
-                document.removeEventListener(
-                    'gestureend',
-                    preventDefaultGestures
-                )
-
-                document.removeEventListener('touchmove', preventPullToRefresh)
-                document.removeEventListener('touchstart', preventDefaultTouch)
-                document.removeEventListener('touchend', preventDoubleTapZoom)
-
-                document.removeEventListener('contextmenu', preventContextMenu)
-
-                document.removeEventListener('scroll', preventScroll)
-                document.removeEventListener('wheel', preventWheel)
-                document.removeEventListener('mousewheel', preventWheel)
-                document.removeEventListener('DOMMouseScroll', preventWheel)
-                document.removeEventListener('keydown', preventKeyboardScroll)
-
-                document.body.removeEventListener('scroll', preventScroll)
-                document.documentElement.removeEventListener(
-                    'scroll',
-                    preventScroll
-                )
-            }
-        }, [])
-
-        return null
     }
 
     useEffect(() => {

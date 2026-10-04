@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
     IconArrowsHorizontal,
     IconCircle,
@@ -8,6 +9,7 @@ import {
     IconScribble,
     IconVectorSpline,
 } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import FlatShadeIcon from '../svg-icons/FlatShadeIcon'
 import GlowShadeIcon from '../svg-icons/GlowShadeIcon'
@@ -44,51 +46,72 @@ const PenOptionsPanel = ({ isSmall }: PenOptionsPanelProps) => {
         setMirror,
         mirrorOptions,
         setMirrorOptions,
-
         strokeOpacity,
         setStrokeOpacity,
-
         penActive,
-
         strokeType,
         setStrokeType,
-
         strokeColor,
         setStrokeColor,
-
         strokeWidth,
         setStrokeWidth,
-
         pressureMode,
         setPressureMode,
-
         drawShapeType,
         setDrawShapeType,
-
         openWidthSlider,
         setOpenWidthSlider,
-
         openColorOptions,
         setOpenColorOptions,
-
         openStrokeOptions,
         setOpenStrokeOptions,
-
         openOpacitySlider,
         setOpenOpacitySlider,
-
         openDrawShapeOptions,
         setOpenDrawShapeOptions,
-
         activeMaterialType,
         setActiveMaterialType,
-
         openStrokeStabler,
         setOpenStrokeStabler,
-
         strokeStablePercentage,
         setStrokeStablePercentage,
-    } = canvasDrawStore((state) => state)
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            mirror: state.mirror,
+            setMirror: state.setMirror,
+            mirrorOptions: state.mirrorOptions,
+            setMirrorOptions: state.setMirrorOptions,
+            strokeOpacity: state.strokeOpacity,
+            setStrokeOpacity: state.setStrokeOpacity,
+            penActive: state.penActive,
+            strokeType: state.strokeType,
+            setStrokeType: state.setStrokeType,
+            strokeColor: state.strokeColor,
+            setStrokeColor: state.setStrokeColor,
+            strokeWidth: state.strokeWidth,
+            setStrokeWidth: state.setStrokeWidth,
+            pressureMode: state.pressureMode,
+            setPressureMode: state.setPressureMode,
+            drawShapeType: state.drawShapeType,
+            setDrawShapeType: state.setDrawShapeType,
+            openWidthSlider: state.openWidthSlider,
+            setOpenWidthSlider: state.setOpenWidthSlider,
+            openColorOptions: state.openColorOptions,
+            setOpenColorOptions: state.setOpenColorOptions,
+            openStrokeOptions: state.openStrokeOptions,
+            setOpenStrokeOptions: state.setOpenStrokeOptions,
+            openOpacitySlider: state.openOpacitySlider,
+            setOpenOpacitySlider: state.setOpenOpacitySlider,
+            openDrawShapeOptions: state.openDrawShapeOptions,
+            setOpenDrawShapeOptions: state.setOpenDrawShapeOptions,
+            activeMaterialType: state.activeMaterialType,
+            setActiveMaterialType: state.setActiveMaterialType,
+            openStrokeStabler: state.openStrokeStabler,
+            setOpenStrokeStabler: state.setOpenStrokeStabler,
+            strokeStablePercentage: state.strokeStablePercentage,
+            setStrokeStablePercentage: state.setStrokeStablePercentage,
+        }))
+    )
 
     /** Only one flyout is open at a time, so opening any closes the rest. */
     function closeAllPanels() {
@@ -617,4 +640,4 @@ const PenOptionsPanel = ({ isSmall }: PenOptionsPanelProps) => {
     )
 }
 
-export default PenOptionsPanel
+export default memo(PenOptionsPanel)

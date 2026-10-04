@@ -1,8 +1,9 @@
-import { useRef, useState, useEffect, useMemo, useCallback } from 'react'
+import { useRef, useState, useEffect, useMemo, useCallback, memo } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
 import { TransformControls } from 'three/addons/controls/TransformControls.js'
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { useShallow } from 'zustand/react/shallow'
 
 import { saveLines, saveSceneMeta } from '../../db/storage'
 import {
@@ -70,13 +71,37 @@ const TransformLine = () => {
         setMergeGeometries,
         activeMaterialType,
         strokeStablePercentage,
-    } = canvasDrawStore((state) => state)
-
-    const { activeGroup, setActiveScene, setGroupData } = canvasRenderStore(
-        (state) => state
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            copy: state.copy,
+            setCopy: state.setCopy,
+            axisMode: state.axisMode,
+            lineColor: state.lineColor,
+            pointerType: state.pointerType,
+            strokeColor: state.strokeColor,
+            strokeType: state.strokeType,
+            strokeWidth: state.strokeWidth,
+            selectLines: state.selectLines,
+            drawShapeType: state.drawShapeType,
+            strokeOpacity: state.strokeOpacity,
+            transformMode: state.transformMode,
+            setSelectLines: state.setSelectLines,
+            mergeGeometries: state.mergeGeometries,
+            setMergeGeometries: state.setMergeGeometries,
+            activeMaterialType: state.activeMaterialType,
+            strokeStablePercentage: state.strokeStablePercentage,
+        }))
     )
 
-    const { transformStyle } = editorPrefsStore((state) => state)
+    const { activeGroup, setActiveScene, setGroupData } = canvasRenderStore(
+        useShallow((state) => ({
+            activeGroup: state.activeGroup,
+            setActiveScene: state.setActiveScene,
+            setGroupData: state.setGroupData,
+        }))
+    )
+
+    const transformStyle = editorPrefsStore((state) => state.transformStyle)
     const setTarget = transformTargetStore((state) => state.setTarget)
     const setReleaseSelection = transformTargetStore(
         (state) => state.setReleaseSelection
@@ -831,4 +856,4 @@ const TransformLine = () => {
     return null
 }
 
-export default TransformLine
+export default memo(TransformLine)

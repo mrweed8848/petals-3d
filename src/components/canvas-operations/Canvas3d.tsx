@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ComponentRef } from 'react'
+import {
+    memo,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+    type ComponentRef,
+    type RefObject,
+} from 'react'
 import * as THREE from 'three'
 import { Canvas, useFrame, useThree, extend } from '@react-three/fiber'
 import {
@@ -7,6 +15,7 @@ import {
     OrthographicCamera,
 } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
+import { useShallow } from 'zustand/react/shallow'
 
 extend(THREE as unknown as Parameters<typeof extend>[0])
 
@@ -19,34 +28,16 @@ import CanvasOperations from './CanvasOperations'
 
 type OrbitControlsRef = ComponentRef<typeof OrbitControls>
 
-/** The R3F canvas: camera, lights, grids, post-processing and the tool layer. */
-const Canvas3d = () => {
-    const {
-        orbitalLock,
-        isOrthographic,
-        cameraFov,
-        gridPlaneX,
-        gridPlaneY,
-        gridPlaneZ,
-    } = canvasViewStore((state) => state)
+function SnapCameraPositionAndRotation({
+    orbitControlsRef,
+    onDone,
+}: {
+    orbitControlsRef: RefObject<OrbitControlsRef | null>
+    onDone: () => void
+}) {
+    const { camera } = useThree()
 
-    const {
-        lightIntensity,
-        canvasBackgroundColor,
-        postProcess,
-        sequentialLoading,
-        setSequentialLoading,
-    } = canvasRenderStore((state) => state)
-
-    const { resolved } = themeStore((state) => state)
-    const palette = SCENE[resolved]
-
-    const [snaping, setSnaping] = useState(false)
-
-    const orbitControlsRef = useRef<OrbitControlsRef>(null)
-
-    function SnapCameraPositionAndRotation() {
-        const { camera } = useThree()
+    useEffect(() => {
         const target = new THREE.Vector3(0, 0, 0)
 
         const camToTarget = new THREE.Vector3()
@@ -75,78 +66,129 @@ const Canvas3d = () => {
 
         camera.position.copy(target).add(snapPosition)
 
-        if (orbitControlsRef.current) {
-            orbitControlsRef.current.target.copy(target)
-            orbitControlsRef.current.update()
+        const controls = orbitControlsRef.current
+        if (controls) {
+            controls.target.copy(target)
+            controls.update()
         }
 
-        setSnaping(false)
+        onDone()
+    }, [camera, orbitControlsRef, onDone])
 
-        return null
-    }
+    return null
+}
 
-    function SmoothFOV() {
-        const { camera } = useThree()
-        const fovRef = useRef(
-            camera instanceof THREE.PerspectiveCamera ? camera.fov : cameraFov
-        )
+function SmoothFOV({ cameraFov }: { cameraFov: number }) {
+    const { camera } = useThree()
+    const fovRef = useRef(
+        camera instanceof THREE.PerspectiveCamera ? camera.fov : cameraFov
+    )
 
-        useFrame(() => {
-            if (!(camera instanceof THREE.PerspectiveCamera)) return
-            fovRef.current += (cameraFov - fovRef.current) * 0.9
-            camera.fov = fovRef.current
-            camera.updateProjectionMatrix()
+    useFrame(() => {
+        if (!(camera instanceof THREE.PerspectiveCamera)) return
+        fovRef.current += (cameraFov - fovRef.current) * 0.9
+        camera.fov = fovRef.current
+        camera.updateProjectionMatrix()
+    })
+
+    return null
+}
+
+function SceneComposer() {
+    const { camera, gl } = useThree()
+    const [ready, setReady] = useState(false)
+
+    useFrame(() => {
+        if (!ready) setReady(true)
+    })
+
+    useEffect(() => {
+        camera.layers.enable(1)
+        gl.autoClear = false
+    }, [camera, gl])
+
+    if (!ready) return null
+
+    return (
+        <EffectComposer multisampling={8} autoClear={false}>
+            <Bloom mipmapBlur intensity={1.5} luminanceThreshold={0.01} />
+        </EffectComposer>
+    )
+}
+
+function SequentialLoader({ onComplete }: { onComplete: () => void }) {
+    const { scene } = useThree()
+
+    useEffect(() => {
+        const sampleObjects: THREE.Object3D[] = []
+
+        scene.traverse((child) => {
+            child.visible = false
+            sampleObjects.push(child)
         })
 
-        return null
-    }
-
-    function SceneComposer() {
-        const { camera, gl } = useThree()
-        const [ready, setReady] = useState(false)
-
-        useFrame(() => {
-            if (!ready) setReady(true)
-        })
-
-        useEffect(() => {
-            camera.layers.enable(1)
-            gl.autoClear = false
-        }, [camera, gl])
-
-        if (!ready) return null
-
-        return (
-            <EffectComposer multisampling={8} autoClear={false}>
-                <Bloom mipmapBlur intensity={1.5} luminanceThreshold={0.01} />
-            </EffectComposer>
-        )
-    }
-
-    function SequentialLoader({ onComplete }: { onComplete: () => void }) {
-        const { scene } = useThree()
-
-        useEffect(() => {
-            const sampleObjects: THREE.Object3D[] = []
-
-            scene.traverse((child) => {
-                child.visible = false
-                sampleObjects.push(child)
-            })
-
-            const showSequentially = async () => {
-                for (const obj of sampleObjects) {
-                    await new Promise((resolve) => setTimeout(resolve, 100))
-                    obj.visible = true
-                }
-                onComplete()
+        const showSequentially = async () => {
+            for (const obj of sampleObjects) {
+                await new Promise((resolve) => setTimeout(resolve, 100))
+                obj.visible = true
             }
+            onComplete()
+        }
 
-            void showSequentially()
-        }, [scene, onComplete])
+        void showSequentially()
+    }, [scene, onComplete])
 
-        return null
-    }
+    return null
+}
+
+/** The R3F canvas: camera, lights, grids, post-processing and the tool layer. */
+const Canvas3d = () => {
+    const {
+        orbitalLock,
+        isOrthographic,
+        cameraFov,
+        gridPlaneX,
+        gridPlaneY,
+        gridPlaneZ,
+    } = canvasViewStore(
+        useShallow((state) => ({
+            orbitalLock: state.orbitalLock,
+            isOrthographic: state.isOrthographic,
+            cameraFov: state.cameraFov,
+            gridPlaneX: state.gridPlaneX,
+            gridPlaneY: state.gridPlaneY,
+            gridPlaneZ: state.gridPlaneZ,
+        }))
+    )
+
+    const {
+        lightIntensity,
+        canvasBackgroundColor,
+        postProcess,
+        sequentialLoading,
+        setSequentialLoading,
+    } = canvasRenderStore(
+        useShallow((state) => ({
+            lightIntensity: state.lightIntensity,
+            canvasBackgroundColor: state.canvasBackgroundColor,
+            postProcess: state.postProcess,
+            sequentialLoading: state.sequentialLoading,
+            setSequentialLoading: state.setSequentialLoading,
+        }))
+    )
+
+    const resolved = themeStore((state) => state.resolved)
+    const palette = SCENE[resolved]
+
+    const [snaping, setSnaping] = useState(false)
+
+    const orbitControlsRef = useRef<OrbitControlsRef>(null)
+
+    const finishSnap = useCallback(() => setSnaping(false), [])
+    const finishSequentialLoading = useCallback(
+        () => setSequentialLoading(false),
+        [setSequentialLoading]
+    )
 
     return (
         <>
@@ -185,7 +227,12 @@ const Canvas3d = () => {
                     <PerspectiveCamera fov={cameraFov} />
                 )}
 
-                {snaping && <SnapCameraPositionAndRotation />}
+                {snaping && (
+                    <SnapCameraPositionAndRotation
+                        orbitControlsRef={orbitControlsRef}
+                        onDone={finishSnap}
+                    />
+                )}
 
                 {(gridPlaneX || gridPlaneY || gridPlaneZ) && (
                     <group>
@@ -218,7 +265,7 @@ const Canvas3d = () => {
                     color={palette.ambient}
                 />
 
-                <SmoothFOV />
+                <SmoothFOV cameraFov={cameraFov} />
 
                 <OrbitControls
                     ref={orbitControlsRef}
@@ -236,9 +283,7 @@ const Canvas3d = () => {
                 <CanvasOperations />
 
                 {sequentialLoading && (
-                    <SequentialLoader
-                        onComplete={() => setSequentialLoading(false)}
-                    />
+                    <SequentialLoader onComplete={finishSequentialLoading} />
                 )}
 
                 {postProcess && <SceneComposer />}
@@ -247,4 +292,4 @@ const Canvas3d = () => {
     )
 }
 
-export default Canvas3d
+export default memo(Canvas3d)

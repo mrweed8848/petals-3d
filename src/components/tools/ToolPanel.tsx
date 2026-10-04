@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import {
     IconArrowsMove,
     IconBallpen,
@@ -15,6 +16,7 @@ import {
     IconVectorSpline,
     IconX,
 } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import GuideIcon from '../svg-icons/GuideIcon'
 import SelectGuide from '../svg-icons/SelectGuide'
@@ -61,83 +63,111 @@ const ToolPanel = ({ isSmall }: ToolPanelProps) => {
     const {
         copy,
         setCopy,
-
         setMirrorOptions,
-
         axisMode,
         penActive,
-
         drawGuide,
         setDrawGuide,
-
         lineColor,
         setLineColor,
-
         setAxisMode,
-
         selectLines,
         setSelectLines,
-
         eraserActive,
         setEraserActive,
-
         dynamicDrawingPlaneMesh,
         setDynamicDrawingPlaneMesh,
-
         transformMode,
         setTransformMode,
-
         selectGuide,
         setSelectGuide,
-
         drawShapeType,
         setDrawShapeType,
-
         setPenActive,
-
         setOpenWidthSlider,
-
         openColorOptions,
         setOpenColorOptions,
-
         setOpenStrokeOptions,
-
         setOpenOpacitySlider,
-
         openDrawShapeOptions,
         setOpenDrawShapeOptions,
-
         bendPlaneGuide,
         setBendPlaneGuide,
-
         loftGuidePlane,
         setLoftGuidePlane,
-
         setEraseGuide,
-
         setOpenStrokeStabler,
-
         radialPercentage,
         setRadialPercentage,
-
         waistPercentage,
         setWaistPercentage,
-
         polyCountPercentage,
         setPolyCountPercentage,
-
         setGenerateLoftSurface,
-
         setHighlighted,
-    } = canvasDrawStore((state) => state)
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            copy: state.copy,
+            setCopy: state.setCopy,
+            setMirrorOptions: state.setMirrorOptions,
+            axisMode: state.axisMode,
+            penActive: state.penActive,
+            drawGuide: state.drawGuide,
+            setDrawGuide: state.setDrawGuide,
+            lineColor: state.lineColor,
+            setLineColor: state.setLineColor,
+            setAxisMode: state.setAxisMode,
+            selectLines: state.selectLines,
+            setSelectLines: state.setSelectLines,
+            eraserActive: state.eraserActive,
+            setEraserActive: state.setEraserActive,
+            dynamicDrawingPlaneMesh: state.dynamicDrawingPlaneMesh,
+            setDynamicDrawingPlaneMesh: state.setDynamicDrawingPlaneMesh,
+            transformMode: state.transformMode,
+            setTransformMode: state.setTransformMode,
+            selectGuide: state.selectGuide,
+            setSelectGuide: state.setSelectGuide,
+            drawShapeType: state.drawShapeType,
+            setDrawShapeType: state.setDrawShapeType,
+            setPenActive: state.setPenActive,
+            setOpenWidthSlider: state.setOpenWidthSlider,
+            openColorOptions: state.openColorOptions,
+            setOpenColorOptions: state.setOpenColorOptions,
+            setOpenStrokeOptions: state.setOpenStrokeOptions,
+            setOpenOpacitySlider: state.setOpenOpacitySlider,
+            openDrawShapeOptions: state.openDrawShapeOptions,
+            setOpenDrawShapeOptions: state.setOpenDrawShapeOptions,
+            bendPlaneGuide: state.bendPlaneGuide,
+            setBendPlaneGuide: state.setBendPlaneGuide,
+            loftGuidePlane: state.loftGuidePlane,
+            setLoftGuidePlane: state.setLoftGuidePlane,
+            setEraseGuide: state.setEraseGuide,
+            setOpenStrokeStabler: state.setOpenStrokeStabler,
+            radialPercentage: state.radialPercentage,
+            setRadialPercentage: state.setRadialPercentage,
+            waistPercentage: state.waistPercentage,
+            setWaistPercentage: state.setWaistPercentage,
+            polyCountPercentage: state.polyCountPercentage,
+            setPolyCountPercentage: state.setPolyCountPercentage,
+            setGenerateLoftSurface: state.setGenerateLoftSurface,
+            setHighlighted: state.setHighlighted,
+        }))
+    )
 
-    const { setOrbitalLock } = canvasViewStore((state) => state)
+    const setOrbitalLock = canvasViewStore((state) => state.setOrbitalLock)
 
-    const { transformStyle } = editorPrefsStore((state) => state)
+    const transformStyle = editorPrefsStore((state) => state.transformStyle)
     const historyApplying = historyStore((state) => state.busy)
 
     const { sceneOptions, setSceneOptions, setGroupOptions, setRenderOptions } =
-        canvasRenderStore((state) => state)
+        canvasRenderStore(
+            useShallow((state) => ({
+                sceneOptions: state.sceneOptions,
+                setSceneOptions: state.setSceneOptions,
+                setGroupOptions: state.setGroupOptions,
+                setRenderOptions: state.setRenderOptions,
+            }))
+        )
 
     /**
      * Modes are mutually exclusive, so every case clears the others. Orbit is
@@ -817,4 +847,4 @@ const ToolPanel = ({ isSmall }: ToolPanelProps) => {
     )
 }
 
-export default ToolPanel
+export default memo(ToolPanel)

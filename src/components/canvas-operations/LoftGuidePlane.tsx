@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, memo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
+import { useShallow } from 'zustand/react/shallow'
 
 import { canvasDrawStore } from '../../hooks/useCanvasDrawStore'
 import { canvasRenderStore } from '../../hooks/useRenderSceneStore'
@@ -39,11 +40,22 @@ const LoftGuidePlane = ({ onDrawingFinished }: LoftGuidePlaneProps) => {
         setHighlighted,
         addToHighlighted,
         pointerType,
-    } = canvasDrawStore((state) => state)
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            radialPercentage: state.radialPercentage,
+            waistPercentage: state.waistPercentage,
+            polyCountPercentage: state.polyCountPercentage,
+            generateLoftSurface: state.generateLoftSurface,
+            loftGuidePlane: state.loftGuidePlane,
+            setHighlighted: state.setHighlighted,
+            addToHighlighted: state.addToHighlighted,
+            pointerType: state.pointerType,
+        }))
+    )
 
-    const { activeGroup } = canvasRenderStore((state) => state)
+    const activeGroup = canvasRenderStore((state) => state.activeGroup)
 
-    const { resolved } = themeStore((state) => state)
+    const resolved = themeStore((state) => state.resolved)
     const palette = SCENE[resolved]
 
     const highlighted = useRef<Set<LineMesh>>(new Set())
@@ -322,4 +334,4 @@ const LoftGuidePlane = ({ onDrawingFinished }: LoftGuidePlaneProps) => {
     return null
 }
 
-export default LoftGuidePlane
+export default memo(LoftGuidePlane)

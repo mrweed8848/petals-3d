@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { ChangeEvent } from 'react'
 
 import {
@@ -12,6 +13,7 @@ import {
     IconStack2,
     IconTrash,
 } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import ColorPicker from '../ColorPicker'
 import Divider from '../Divider'
@@ -58,35 +60,54 @@ const SceneOptionsPanel = ({ isSmall }: SceneOptionsPanelProps) => {
     const {
         groupOptions,
         setGroupOptions,
-
         groupData,
-
         selectedGroups,
         addToSelectedGroup,
         removeFromSelectedGroup,
-
         renderOptions,
         setRenderOptions,
-
         postProcess,
         setPostProcess,
-
         sequentialLoading,
         setSequentialLoading,
-
         canvasBackgroundColor,
         setCanvasBackgroundColor,
-
         lightIntensity,
         setLightIntensity,
-    } = canvasRenderStore((state) => state)
+    } = canvasRenderStore(
+        useShallow((state) => ({
+            groupOptions: state.groupOptions,
+            setGroupOptions: state.setGroupOptions,
+            groupData: state.groupData,
+            selectedGroups: state.selectedGroups,
+            addToSelectedGroup: state.addToSelectedGroup,
+            removeFromSelectedGroup: state.removeFromSelectedGroup,
+            renderOptions: state.renderOptions,
+            setRenderOptions: state.setRenderOptions,
+            postProcess: state.postProcess,
+            setPostProcess: state.setPostProcess,
+            sequentialLoading: state.sequentialLoading,
+            setSequentialLoading: state.setSequentialLoading,
+            canvasBackgroundColor: state.canvasBackgroundColor,
+            setCanvasBackgroundColor: state.setCanvasBackgroundColor,
+            lightIntensity: state.lightIntensity,
+            setLightIntensity: state.setLightIntensity,
+        }))
+    )
 
     const {
         setNewGroupModal,
         setCopyGroupModal,
         setRenameGroupModal,
         setDeleteGroupModal,
-    } = dashboardStore((state) => state)
+    } = dashboardStore(
+        useShallow((state) => ({
+            setNewGroupModal: state.setNewGroupModal,
+            setCopyGroupModal: state.setCopyGroupModal,
+            setRenameGroupModal: state.setRenameGroupModal,
+            setDeleteGroupModal: state.setDeleteGroupModal,
+        }))
+    )
 
     function handleSceneActiveOptions(option: SceneTab) {
         switch (option) {
@@ -411,4 +432,4 @@ const SceneOptionsPanel = ({ isSmall }: SceneOptionsPanelProps) => {
     )
 }
 
-export default SceneOptionsPanel
+export default memo(SceneOptionsPanel)

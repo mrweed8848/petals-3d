@@ -1,6 +1,7 @@
-import { useRef, useCallback } from 'react'
+import { memo, useRef, useCallback, type RefObject } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { useShallow } from 'zustand/react/shallow'
 
 import { canvasDrawStore } from '../../hooks/useCanvasDrawStore'
 import { themeStore } from '../../hooks/useThemeStore'
@@ -22,6 +23,20 @@ export interface DynamicBendGuidePlaneProps {
     onDrawingFinished: (mesh: THREE.Mesh) => void
 }
 
+function SyncCameraFromMain({
+    planeRef,
+}: {
+    planeRef: RefObject<THREE.Mesh | null>
+}) {
+    const { camera: mainCamera } = useThree()
+    useFrame(() => {
+        const plane = planeRef.current
+        if (!plane) return
+        plane.rotation.copy(mainCamera.rotation)
+    })
+    return null
+}
+
 /** Draws the rail that an existing guide profile is swept along to bend it. */
 const DynamicBendGuidePlane = ({
     onDrawingFinished,
@@ -30,14 +45,22 @@ const DynamicBendGuidePlane = ({
     const planeRef = useRef<THREE.Mesh>(null)
 
     const {
-        drawGuide,
         drawShapeType,
         strokeOpacity,
         ogGuidePoints,
         ogGuideNormals,
         bendPlaneGuide,
         pointerType,
-    } = canvasDrawStore((state) => state)
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            drawShapeType: state.drawShapeType,
+            strokeOpacity: state.strokeOpacity,
+            ogGuidePoints: state.ogGuidePoints,
+            ogGuideNormals: state.ogGuideNormals,
+            bendPlaneGuide: state.bendPlaneGuide,
+            pointerType: state.pointerType,
+        }))
+    )
 
     const MAX_POINTS = 50000
     const SMOOTH_PERCENTAGE = 75
@@ -52,7 +75,7 @@ const DynamicBendGuidePlane = ({
     let normals: THREE.Vector3[] = []
     let currentMesh: THREE.Mesh | null = null
 
-    const { resolved } = themeStore((state) => state)
+    const resolved = themeStore((state) => state.resolved)
     const color = new THREE.Color(SCENE[resolved].guide)
 
     const BEND_OPTIONS = {
@@ -514,19 +537,11 @@ const DynamicBendGuidePlane = ({
         isDrawing = false
     }
 
-    const SyncCameraFromMain = () => {
-        const { camera: mainCamera } = useThree()
-        useFrame(() => {
-            const plane = planeRef.current
-            if (!plane && drawGuide) return
-            plane?.rotation.copy(mainCamera.rotation)
-        })
-        return null
-    }
-
     return (
         <>
-            {ogGuidePoints && bendPlaneGuide && <SyncCameraFromMain />}
+            {ogGuidePoints && bendPlaneGuide && (
+                <SyncCameraFromMain planeRef={planeRef} />
+            )}
             {ogGuidePoints && bendPlaneGuide && (
                 <mesh
                     ref={planeRef}
@@ -550,4 +565,4 @@ const DynamicBendGuidePlane = ({
     )
 }
 
-export default DynamicBendGuidePlane
+export default memo(DynamicBendGuidePlane)

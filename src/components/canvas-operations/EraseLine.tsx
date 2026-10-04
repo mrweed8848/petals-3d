@@ -1,6 +1,7 @@
-import { useRef, useState, useEffect, useCallback } from 'react'
+import { useRef, useState, useEffect, useCallback, memo } from 'react'
 import * as THREE from 'three'
 import { useFrame, useThree } from '@react-three/fiber'
+import { useShallow } from 'zustand/react/shallow'
 
 import { saveLines, saveSceneMeta } from '../../db/storage'
 import { historyBusy, pushHistory } from '../../helpers/historyCapture'
@@ -31,8 +32,18 @@ function forEachMaterial(
 /** Raycasts on drag and marks whatever it hits for removal. */
 const EraseLine = () => {
     const { camera, pointer, raycaster, scene } = useThree()
-    const { activeGroup, setGroupData } = canvasRenderStore((state) => state)
-    const { eraserActive, pointerType } = canvasDrawStore((state) => state)
+    const { activeGroup, setGroupData } = canvasRenderStore(
+        useShallow((state) => ({
+            activeGroup: state.activeGroup,
+            setGroupData: state.setGroupData,
+        }))
+    )
+    const { eraserActive, pointerType } = canvasDrawStore(
+        useShallow((state) => ({
+            eraserActive: state.eraserActive,
+            pointerType: state.pointerType,
+        }))
+    )
 
     const highlighted = useRef<Set<THREE.Mesh>>(new Set())
     const [dragging, setDragging] = useState(false)
@@ -164,4 +175,4 @@ const EraseLine = () => {
     return null
 }
 
-export default EraseLine
+export default memo(EraseLine)

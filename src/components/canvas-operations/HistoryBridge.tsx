@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, memo } from 'react'
 import { useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -302,4 +302,4 @@ const HistoryBridge = () => {
     return null
 }
 
-export default HistoryBridge
+export default memo(HistoryBridge)

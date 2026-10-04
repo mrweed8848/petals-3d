@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 
 import { IconX } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { saveLines, saveSceneMeta } from '../../db/storage'
 import { pushHistory } from '../../helpers/historyCapture'
@@ -13,14 +14,21 @@ import { canvasRenderStore } from '../../hooks/useRenderSceneStore'
 const CopyGroups = () => {
     const [loading, setLoading] = useState(false)
 
-    const { setCopyGroupModal } = dashboardStore((state) => state)
+    const setCopyGroupModal = dashboardStore((state) => state.setCopyGroupModal)
 
     const {
         copySelectedGroups,
         resetSelectedGroups,
         copyGroups,
         setCopyGroups,
-    } = canvasRenderStore((state) => state)
+    } = canvasRenderStore(
+        useShallow((state) => ({
+            copySelectedGroups: state.copySelectedGroups,
+            resetSelectedGroups: state.resetSelectedGroups,
+            copyGroups: state.copyGroups,
+            setCopyGroups: state.setCopyGroups,
+        }))
+    )
 
     function handleClose() {
         setCopyGroupModal(false)
@@ -133,4 +141,4 @@ const CopyGroups = () => {
     )
 }
 
-export default CopyGroups
+export default memo(CopyGroups)

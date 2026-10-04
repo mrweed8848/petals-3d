@@ -1,7 +1,8 @@
-import { useState, type ChangeEvent } from 'react'
+import { useState, type ChangeEvent, memo } from 'react'
 
 import { IconX } from '@tabler/icons-react'
 import { v4 as uuidv4 } from 'uuid'
+import { useShallow } from 'zustand/react/shallow'
 
 import { saveSceneMeta } from '../../db/storage'
 import { pushHistory } from '../../helpers/historyCapture'
@@ -16,10 +17,17 @@ const AddNewGroups = () => {
     const [loading, setLoading] = useState(false)
     const [groupName, setGroupName] = useState('')
 
-    const { setNewGroupModal } = dashboardStore((state) => state)
+    const setNewGroupModal = dashboardStore((state) => state.setNewGroupModal)
 
     const { resetSelectedGroups, groupData, addNewGroup, sortGroupsByName } =
-        canvasRenderStore((state) => state)
+        canvasRenderStore(
+            useShallow((state) => ({
+                resetSelectedGroups: state.resetSelectedGroups,
+                groupData: state.groupData,
+                addNewGroup: state.addNewGroup,
+                sortGroupsByName: state.sortGroupsByName,
+            }))
+        )
 
     function handleClose() {
         setGroupName('')
@@ -146,4 +154,4 @@ const AddNewGroups = () => {
     )
 }
 
-export default AddNewGroups
+export default memo(AddNewGroups)

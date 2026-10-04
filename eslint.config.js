@@ -52,6 +52,16 @@ export default tseslint.config(
             'react-hooks/set-state-in-effect': 'warn',
             'no-useless-assignment': 'warn',
 
+            'no-restricted-syntax': [
+                'error',
+                {
+                    selector:
+                        "CallExpression[callee.name=/Store$/] > ArrowFunctionExpression[body.type='Identifier']",
+                    message:
+                        'Select the fields you need, or wrap a multi-field selector in useShallow. Returning the whole state re-renders on every change.',
+                },
+            ],
+
             'better-tailwindcss/no-unknown-classes': [
                 'error',
                 {

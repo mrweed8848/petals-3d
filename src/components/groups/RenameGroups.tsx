@@ -1,6 +1,7 @@
-import { useState, type ChangeEvent } from 'react'
+import { useState, type ChangeEvent, memo } from 'react'
 
 import { IconX } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { saveSceneMeta } from '../../db/storage'
 import { pushHistory } from '../../helpers/historyCapture'
@@ -14,10 +15,18 @@ const RenameGroups = () => {
     const [loading, setLoading] = useState(false)
     const [groupName, setGroupName] = useState('')
 
-    const { setRenameGroupModal } = dashboardStore((state) => state)
+    const setRenameGroupModal = dashboardStore(
+        (state) => state.setRenameGroupModal
+    )
 
     const { updateGroupNamesFromSelected, resetSelectedGroups } =
-        canvasRenderStore((state) => state)
+        canvasRenderStore(
+            useShallow((state) => ({
+                updateGroupNamesFromSelected:
+                    state.updateGroupNamesFromSelected,
+                resetSelectedGroups: state.resetSelectedGroups,
+            }))
+        )
 
     function handleClose() {
         setGroupName('')
@@ -129,4 +138,4 @@ const RenameGroups = () => {
     )
 }
 
-export default RenameGroups
+export default memo(RenameGroups)

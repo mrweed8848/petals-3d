@@ -225,7 +225,12 @@ export const canvasDrawStore = create<CanvasDrawState>((set) => ({
     setMirrorOptions: (bool) => set({ mirrorOptions: bool }),
 
     highlighted: [],
-    setHighlighted: (data) => set({ highlighted: data }),
+    setHighlighted: (data) =>
+        set((state) =>
+            state.highlighted.length === 0 && data.length === 0
+                ? state
+                : { highlighted: data }
+        ),
     addToHighlighted: (mesh) =>
         set((state) => ({ highlighted: [...state.highlighted, mesh] })),
 

@@ -10,8 +10,17 @@ if (!container) {
     throw new Error('Root element #root is missing from index.html')
 }
 
-createRoot(container).render(
-    <StrictMode>
-        <App />
-    </StrictMode>
-)
+async function start(root: HTMLElement) {
+    if (import.meta.env.DEV) {
+        const { scan } = await import('react-scan')
+        scan({ enabled: true })
+    }
+
+    createRoot(root).render(
+        <StrictMode>
+            <App />
+        </StrictMode>
+    )
+}
+
+void start(container)

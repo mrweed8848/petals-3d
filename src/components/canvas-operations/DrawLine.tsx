@@ -1,7 +1,8 @@
-import { useRef, useState, useCallback, useEffect } from 'react'
+import { useRef, useState, useCallback, useEffect, memo } from 'react'
 import * as THREE from 'three'
 import { useThree } from '@react-three/fiber'
 import * as BufferGeometryUtils from 'three/examples/jsm/utils/BufferGeometryUtils.js'
+import { useShallow } from 'zustand/react/shallow'
 
 import { canvasDrawStore } from '../../hooks/useCanvasDrawStore'
 import { canvasRenderStore } from '../../hooks/useRenderSceneStore'
@@ -107,10 +108,29 @@ const DrawLine = () => {
         activeMaterialType,
         strokeStablePercentage,
         dynamicDrawingPlaneMesh,
-    } = canvasDrawStore((state) => state)
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            mirror: state.mirror,
+            penActive: state.penActive,
+            strokeType: state.strokeType,
+            pointerType: state.pointerType,
+            strokeColor: state.strokeColor,
+            strokeWidth: state.strokeWidth,
+            pressureMode: state.pressureMode,
+            drawShapeType: state.drawShapeType,
+            strokeOpacity: state.strokeOpacity,
+            activeMaterialType: state.activeMaterialType,
+            strokeStablePercentage: state.strokeStablePercentage,
+            dynamicDrawingPlaneMesh: state.dynamicDrawingPlaneMesh,
+        }))
+    )
 
     const { activeGroup, groupData, setGroupData } = canvasRenderStore(
-        (state) => state
+        useShallow((state) => ({
+            activeGroup: state.activeGroup,
+            groupData: state.groupData,
+            setGroupData: state.setGroupData,
+        }))
     )
 
     const MAX_POINTS = 50000
@@ -1517,4 +1537,4 @@ const DrawLine = () => {
     )
 }
 
-export default DrawLine
+export default memo(DrawLine)

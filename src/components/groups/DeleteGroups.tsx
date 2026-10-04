@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 
 import { IconX } from '@tabler/icons-react'
+import { useShallow } from 'zustand/react/shallow'
 
 import { saveSceneMeta } from '../../db/storage'
 import { pushHistory } from '../../helpers/historyCapture'
@@ -13,10 +14,18 @@ import { canvasRenderStore } from '../../hooks/useRenderSceneStore'
 const DeleteGroups = () => {
     const [loading, setLoading] = useState(false)
 
-    const { setDeleteGroupModal } = dashboardStore((state) => state)
+    const setDeleteGroupModal = dashboardStore(
+        (state) => state.setDeleteGroupModal
+    )
 
     const { resetSelectedGroups, deleteSelectedGroups, sortGroupsByName } =
-        canvasRenderStore((state) => state)
+        canvasRenderStore(
+            useShallow((state) => ({
+                resetSelectedGroups: state.resetSelectedGroups,
+                deleteSelectedGroups: state.deleteSelectedGroups,
+                sortGroupsByName: state.sortGroupsByName,
+            }))
+        )
 
     function handleClose() {
         setDeleteGroupModal(false)
@@ -119,4 +128,4 @@ const DeleteGroups = () => {
     )
 }
 
-export default DeleteGroups
+export default memo(DeleteGroups)

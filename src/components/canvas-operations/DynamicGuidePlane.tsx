@@ -1,6 +1,7 @@
-import { useRef, useCallback } from 'react'
+import { memo, useRef, useCallback, type RefObject } from 'react'
 import { useThree, useFrame } from '@react-three/fiber'
 import * as THREE from 'three'
+import { useShallow } from 'zustand/react/shallow'
 
 import { canvasDrawStore } from '../../hooks/useCanvasDrawStore'
 import { themeStore } from '../../hooks/useThemeStore'
@@ -20,6 +21,20 @@ export interface DynamicGuidePlaneProps {
     onDrawingFinished: (mesh: THREE.Mesh) => void
 }
 
+function SyncCameraFromMain({
+    planeRef,
+}: {
+    planeRef: RefObject<THREE.Mesh | null>
+}) {
+    const { camera: mainCamera } = useThree()
+    useFrame(() => {
+        const plane = planeRef.current
+        if (!plane) return
+        plane.rotation.copy(mainCamera.rotation)
+    })
+    return null
+}
+
 /**
  * The core mechanic. An invisible plane is held facing the camera; the curve
  * you draw on it is extruded into a ribbon, and that ribbon becomes the
@@ -36,7 +51,16 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
         setOgGuidePoints,
         setOgGuideNormals,
         pointerType,
-    } = canvasDrawStore((state) => state)
+    } = canvasDrawStore(
+        useShallow((state) => ({
+            drawGuide: state.drawGuide,
+            drawShapeType: state.drawShapeType,
+            strokeOpacity: state.strokeOpacity,
+            setOgGuidePoints: state.setOgGuidePoints,
+            setOgGuideNormals: state.setOgGuideNormals,
+            pointerType: state.pointerType,
+        }))
+    )
 
     const MAX_POINTS = 50000
     const SMOOTH_PERCENTAGE = 75
@@ -52,7 +76,7 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
     let normals: THREE.Vector3[] = []
     let currentMesh: THREE.Mesh | null = null
 
-    const { resolved } = themeStore((state) => state)
+    const resolved = themeStore((state) => state.resolved)
     const color = new THREE.Color(SCENE[resolved].guide)
 
     function createContinuousRibbonGeometry(
@@ -585,21 +609,9 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
         isDrawing = false
     }
 
-    // The plane must face the camera every frame, or a curve drawn after an
-    // orbit lands on a surface angled away from the viewer.
-    const SyncCameraFromMain = () => {
-        const { camera: mainCamera } = useThree()
-        useFrame(() => {
-            const plane = planeRef.current
-            if (!plane) return
-            plane.rotation.copy(mainCamera.rotation)
-        })
-        return null
-    }
-
     return (
         <>
-            {drawGuide && <SyncCameraFromMain />}
+            {drawGuide && <SyncCameraFromMain planeRef={planeRef} />}
             {drawGuide && (
                 <mesh
                     ref={planeRef}
@@ -623,4 +635,4 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
     )
 }
 
-export default DynamicGuidePlane
+export default memo(DynamicGuidePlane)

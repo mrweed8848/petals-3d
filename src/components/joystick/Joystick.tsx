@@ -3,6 +3,7 @@ import {
     useRef,
     useState,
     type PointerEvent as ReactPointerEvent,
+    memo,
 } from 'react'
 import * as THREE from 'three'
 
@@ -112,8 +113,8 @@ const spareQuaternion = new THREE.Quaternion()
  */
 const Joystick = () => {
     const target = transformTargetStore((state) => state.target)
-    const { transformStep } = editorPrefsStore((state) => state)
-    const { axisMode } = canvasDrawStore((state) => state)
+    const transformStep = editorPrefsStore((state) => state.transformStep)
+    const axisMode = canvasDrawStore((state) => state.axisMode)
 
     const [coneAction, setConeAction] = useState<ConeAction>('move')
     const [active, setActive] = useState<HandleKey | null>(null)
@@ -578,4 +579,4 @@ const Joystick = () => {
     )
 }
 
-export default Joystick
+export default memo(Joystick)

@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, memo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import * as THREE from 'three'
 
@@ -58,4 +58,4 @@ const JoystickCameraBridge = () => {
     return null
 }
 
-export default JoystickCameraBridge
+export default memo(JoystickCameraBridge)
