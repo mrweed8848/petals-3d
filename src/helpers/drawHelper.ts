@@ -9,6 +9,7 @@ import type {
     LineRecord,
     MirrorState,
     StripId,
+    StrokeSample,
     StrokeType,
     StrokeWidth,
 } from '../types/domain'
@@ -17,6 +18,245 @@ export type StrokeMaterial =
     THREE.MeshBasicMaterial | THREE.MeshStandardMaterial
 
 const MAX_POINTS = 50000
+
+export function createGuideLineMesh(
+    scene: THREE.Scene,
+    color: THREE.Color,
+    maxPoints: number
+): THREE.Mesh {
+    const maxVertices = maxPoints * 4
+
+    const geometry = new THREE.BufferGeometry()
+    geometry.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array(maxVertices * 3), 3)
+    )
+    geometry.setAttribute(
+        'normal',
+        new THREE.BufferAttribute(new Float32Array(maxVertices * 3), 3)
+    )
+    geometry.setIndex(
+        new THREE.BufferAttribute(new Uint32Array(maxPoints * 24), 1)
+    )
+    geometry.setDrawRange(0, 0)
+
+    const material = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color),
+        wireframe: false,
+        transparent: true,
+        opacity: 1,
+        side: THREE.DoubleSide,
+        forceSinglePass: true,
+        depthTest: true,
+        depthWrite: true,
+    })
+
+    const mesh = new THREE.Mesh(geometry, material)
+    mesh.userData.type = 'DYNAMIC_GUIDE_LINE'
+    scene.add(mesh)
+    return mesh
+}
+
+export interface GuideLineOptions {
+    shapeType: DrawShapeType
+    smoothPercentage: number
+    optimizationThreshold: number
+    color: THREE.Color
+    opacity: number
+}
+
+export function updateGuideLine(
+    mesh: THREE.Mesh,
+    rawPts: THREE.Vector3[],
+    pressuresArr: number[],
+    normalsArr: THREE.Vector3[],
+    options: GuideLineOptions
+): void {
+    const {
+        shapeType,
+        smoothPercentage,
+        optimizationThreshold,
+        color,
+        opacity,
+    } = options
+
+    if (rawPts.length < 2) return
+
+    const geometry = mesh.geometry
+
+    let pts = rawPts
+    let finalNormals = normalsArr
+
+    if (shapeType === 'free_hand') {
+        pts = smoothPoints(rawPts, smoothPercentage)
+        const smoothedPressures = smoothArray(pressuresArr, smoothPercentage)
+        const filteredResult = filterPoints(
+            pts,
+            smoothedPressures,
+            normalsArr,
+            optimizationThreshold
+        )
+        pts = filteredResult.filteredPts
+        finalNormals = filteredResult.filteredNormals
+    }
+
+    if (pts.length < 2) return
+
+    const positions: number[] = []
+    const meshNormals: number[] = []
+    const indices: number[] = []
+
+    const tangents: THREE.Vector3[] = []
+    for (let i = 0; i < pts.length - 1; i++) {
+        tangents.push(
+            new THREE.Vector3().subVectors(pts[i + 1]!, pts[i]!).normalize()
+        )
+    }
+
+    if (tangents.length === 0) {
+        tangents.push(new THREE.Vector3(1, 0, 0))
+    }
+
+    const fallbackNormal = new THREE.Vector3(0, 1, 0)
+    const firstNormal = finalNormals[0] ?? fallbackNormal
+    const firstTangent = tangents[0]!
+
+    const transportedRights: THREE.Vector3[] = []
+    const right = new THREE.Vector3()
+        .crossVectors(firstNormal, firstTangent)
+        .normalize()
+
+    if (right.lengthSq() < 1e-6) {
+        right.set(0, 1, 0)
+        if (Math.abs(firstTangent.dot(right)) > 0.99) right.set(1, 0, 0)
+        right.crossVectors(firstNormal, firstTangent).normalize()
+    }
+    transportedRights.push(right.clone())
+
+    for (let i = 1; i < tangents.length; i++) {
+        const prevT = tangents[i - 1]!
+        const currT = tangents[i]!
+        const axis = new THREE.Vector3().crossVectors(prevT, currT)
+        const angle = Math.acos(THREE.MathUtils.clamp(prevT.dot(currT), -1, 1))
+
+        if (axis.lengthSq() < 1e-6 || angle === 0) {
+            transportedRights.push(transportedRights[i - 1]!.clone())
+        } else {
+            const q = new THREE.Quaternion().setFromAxisAngle(
+                axis.normalize(),
+                angle
+            )
+            transportedRights.push(
+                transportedRights[i - 1]!.clone().applyQuaternion(q).normalize()
+            )
+        }
+    }
+
+    for (let i = 0; i < pts.length; i++) {
+        const curr = pts[i]!
+        const tangent =
+            i === pts.length - 1
+                ? (tangents[i - 1] ?? firstTangent)
+                : (tangents[i] ?? firstTangent)
+        const rightVec =
+            transportedRights[i] ??
+            transportedRights[transportedRights.length - 1]!
+        const up = new THREE.Vector3()
+            .crossVectors(tangent, rightVec)
+            .normalize()
+
+        const halfW = 0.025
+        const halfH = 0.025
+
+        const tl = new THREE.Vector3()
+            .copy(curr)
+            .addScaledVector(rightVec, -halfW)
+            .addScaledVector(up, halfH)
+        const tr = new THREE.Vector3()
+            .copy(curr)
+            .addScaledVector(rightVec, halfW)
+            .addScaledVector(up, halfH)
+        const br = new THREE.Vector3()
+            .copy(curr)
+            .addScaledVector(rightVec, halfW)
+            .addScaledVector(up, -halfH)
+        const bl = new THREE.Vector3()
+            .copy(curr)
+            .addScaledVector(rightVec, -halfW)
+            .addScaledVector(up, -halfH)
+
+        const normal = (finalNormals[i] ?? firstNormal).clone()
+        const baseIdx = positions.length / 3
+
+        for (const v of [tl, tr, br, bl]) {
+            positions.push(v.x, v.y, v.z)
+            meshNormals.push(normal.x, normal.y, normal.z)
+        }
+
+        if (i > 0) {
+            const prevBase = baseIdx - 4
+            indices.push(prevBase, prevBase + 1, baseIdx + 1)
+            indices.push(prevBase, baseIdx + 1, baseIdx)
+            indices.push(prevBase + 1, prevBase + 2, baseIdx + 2)
+            indices.push(prevBase + 1, baseIdx + 2, baseIdx + 1)
+            indices.push(prevBase + 2, prevBase + 3, baseIdx + 3)
+            indices.push(prevBase + 2, baseIdx + 3, baseIdx + 2)
+            indices.push(prevBase + 3, prevBase, baseIdx)
+            indices.push(prevBase + 3, baseIdx, baseIdx + 3)
+        }
+    }
+
+    geometry.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute(positions, 3)
+    )
+    geometry.setAttribute(
+        'normal',
+        new THREE.Float32BufferAttribute(meshNormals, 3)
+    )
+    geometry.setIndex(indices)
+
+    geometry.attributes.position!.needsUpdate = true
+    geometry.attributes.normal!.needsUpdate = true
+    if (geometry.index) geometry.index.needsUpdate = true
+    geometry.setDrawRange(0, indices.length)
+
+    const material = mesh.material
+    if (material instanceof THREE.MeshBasicMaterial) {
+        material.color.copy(color)
+        material.opacity = opacity
+        material.needsUpdate = true
+    }
+}
+
+const pointerRaycaster = new THREE.Raycaster()
+const pointerNdc = new THREE.Vector2()
+
+export function intersectPlaneAtPointer(
+    event: PointerEvent,
+    canvas: HTMLElement,
+    camera: THREE.Camera,
+    plane: THREE.Object3D
+): StrokeSample | null {
+    const rect = canvas.getBoundingClientRect()
+
+    pointerNdc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1
+    )
+    pointerRaycaster.setFromCamera(pointerNdc, camera)
+
+    const intersection = pointerRaycaster.intersectObject(plane)[0]
+    if (!intersection?.face) return null
+
+    return {
+        point: intersection.point.clone(),
+        normal: intersection.face.normal
+            .clone()
+            .transformDirection(intersection.object.matrixWorld)
+            .normalize(),
+    }
+}
 
 export interface GenerateSceneResult {
     newGeneratedGroups: Group[]
@@ -47,7 +287,7 @@ export const buildLineMesh = (
             k
         )
 
-        updateLine(
+        updateStrokeStrip(
             k,
             line.optimization_threshold,
             line.smooth_percentage,
@@ -113,7 +353,7 @@ export const generateScene = (
     return { newGeneratedGroups, newScene: scene }
 }
 
-function updateLine(
+export function updateStrokeStrip(
     stripId: StripId,
     optimizationThreshold: number,
     smoothPercentage: number,
@@ -125,7 +365,8 @@ function updateLine(
     strokeColor: string,
     rawPts: THREE.Vector3[],
     pressuresArr: number[],
-    normalsArr: THREE.Vector3[]
+    normalsArr: THREE.Vector3[],
+    smoothFreehand = true
 ): void {
     if (rawPts.length < 2) return
 
@@ -135,7 +376,7 @@ function updateLine(
     let pressures = pressuresArr
     let finalNormals = normalsArr
 
-    if (shapeType === 'free_hand') {
+    if (shapeType === 'free_hand' && smoothFreehand) {
         pts = smoothPoints(rawPts, smoothPercentage)
         pressures = smoothArray(pressuresArr, smoothPercentage)
         const filteredResult = filterPoints(

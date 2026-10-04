@@ -8,10 +8,10 @@ import { themeStore } from '../../hooks/useThemeStore'
 import { SCENE } from '../../config/theme'
 
 import {
-    smoothArray,
-    smoothPoints,
-    filterPoints,
+    createGuideLineMesh,
     generateCirclePointsWorld,
+    updateGuideLine,
+    intersectPlaneAtPointer,
     getSnappedLinePointsInPlane,
     generateSemiCircleOpenArcWorld,
 } from '../../helpers/drawHelper'
@@ -181,37 +181,7 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
     }
 
     function createInitialLineMesh(): THREE.Mesh {
-        const maxVertices = MAX_POINTS * 4
-
-        const geometry = new THREE.BufferGeometry()
-        geometry.setAttribute(
-            'position',
-            new THREE.BufferAttribute(new Float32Array(maxVertices * 3), 3)
-        )
-        geometry.setAttribute(
-            'normal',
-            new THREE.BufferAttribute(new Float32Array(maxVertices * 3), 3)
-        )
-        geometry.setIndex(
-            new THREE.BufferAttribute(new Uint32Array(MAX_POINTS * 24), 1)
-        )
-        geometry.setDrawRange(0, 0)
-
-        const material = new THREE.MeshBasicMaterial({
-            color: new THREE.Color(color),
-            wireframe: false,
-            transparent: true,
-            opacity: 1,
-            side: THREE.DoubleSide,
-            forceSinglePass: true,
-            depthTest: true,
-            depthWrite: true,
-        })
-
-        const mesh = new THREE.Mesh(geometry, material)
-        mesh.userData.type = 'DYNAMIC_GUIDE_LINE'
-        scene.add(mesh)
-        return mesh
+        return createGuideLineMesh(scene, color, MAX_POINTS)
     }
 
     function updateLine(
@@ -220,189 +190,20 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
         pressuresArr: number[],
         normalsArr: THREE.Vector3[]
     ): void {
-        if (rawPts.length < 2) return
-
-        const geometry = mesh.geometry
-
-        let pts = rawPts
-        let finalNormals = normalsArr
-
-        if (drawShapeType === 'free_hand') {
-            pts = smoothPoints(rawPts, SMOOTH_PERCENTAGE)
-            const smoothedPressures = smoothArray(
-                pressuresArr,
-                SMOOTH_PERCENTAGE
-            )
-            const filteredResult = filterPoints(
-                pts,
-                smoothedPressures,
-                normalsArr,
-                OPTIMIZATION_THRESHOLD
-            )
-            pts = filteredResult.filteredPts
-            finalNormals = filteredResult.filteredNormals
-        }
-
-        if (pts.length < 2) return
-
-        const positions: number[] = []
-        const meshNormals: number[] = []
-        const indices: number[] = []
-
-        const tangents: THREE.Vector3[] = []
-        for (let i = 0; i < pts.length - 1; i++) {
-            tangents.push(
-                new THREE.Vector3().subVectors(pts[i + 1]!, pts[i]!).normalize()
-            )
-        }
-
-        if (tangents.length === 0) {
-            tangents.push(new THREE.Vector3(1, 0, 0))
-        }
-
-        const fallbackNormal = new THREE.Vector3(0, 1, 0)
-        const firstNormal = finalNormals[0] ?? fallbackNormal
-        const firstTangent = tangents[0]!
-
-        const transportedRights: THREE.Vector3[] = []
-        const right = new THREE.Vector3()
-            .crossVectors(firstNormal, firstTangent)
-            .normalize()
-
-        if (right.lengthSq() < 1e-6) {
-            right.set(0, 1, 0)
-            if (Math.abs(firstTangent.dot(right)) > 0.99) right.set(1, 0, 0)
-            right.crossVectors(firstNormal, firstTangent).normalize()
-        }
-        transportedRights.push(right.clone())
-
-        for (let i = 1; i < tangents.length; i++) {
-            const prevT = tangents[i - 1]!
-            const currT = tangents[i]!
-            const axis = new THREE.Vector3().crossVectors(prevT, currT)
-            const angle = Math.acos(
-                THREE.MathUtils.clamp(prevT.dot(currT), -1, 1)
-            )
-
-            if (axis.lengthSq() < 1e-6 || angle === 0) {
-                transportedRights.push(transportedRights[i - 1]!.clone())
-            } else {
-                const q = new THREE.Quaternion().setFromAxisAngle(
-                    axis.normalize(),
-                    angle
-                )
-                transportedRights.push(
-                    transportedRights[i - 1]!.clone()
-                        .applyQuaternion(q)
-                        .normalize()
-                )
-            }
-        }
-
-        for (let i = 0; i < pts.length; i++) {
-            const curr = pts[i]!
-            const tangent =
-                i === pts.length - 1
-                    ? (tangents[i - 1] ?? firstTangent)
-                    : (tangents[i] ?? firstTangent)
-            const rightVec =
-                transportedRights[i] ??
-                transportedRights[transportedRights.length - 1]!
-            const up = new THREE.Vector3()
-                .crossVectors(tangent, rightVec)
-                .normalize()
-
-            const halfW = 0.025
-            const halfH = 0.025
-
-            const tl = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, -halfW)
-                .addScaledVector(up, halfH)
-            const tr = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, halfW)
-                .addScaledVector(up, halfH)
-            const br = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, halfW)
-                .addScaledVector(up, -halfH)
-            const bl = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, -halfW)
-                .addScaledVector(up, -halfH)
-
-            const normal = (finalNormals[i] ?? firstNormal).clone()
-            const baseIdx = positions.length / 3
-
-            for (const v of [tl, tr, br, bl]) {
-                positions.push(v.x, v.y, v.z)
-                meshNormals.push(normal.x, normal.y, normal.z)
-            }
-
-            if (i > 0) {
-                const prevBase = baseIdx - 4
-                indices.push(prevBase, prevBase + 1, baseIdx + 1)
-                indices.push(prevBase, baseIdx + 1, baseIdx)
-                indices.push(prevBase + 1, prevBase + 2, baseIdx + 2)
-                indices.push(prevBase + 1, baseIdx + 2, baseIdx + 1)
-                indices.push(prevBase + 2, prevBase + 3, baseIdx + 3)
-                indices.push(prevBase + 2, baseIdx + 3, baseIdx + 2)
-                indices.push(prevBase + 3, prevBase, baseIdx)
-                indices.push(prevBase + 3, baseIdx, baseIdx + 3)
-            }
-        }
-
-        geometry.setAttribute(
-            'position',
-            new THREE.Float32BufferAttribute(positions, 3)
-        )
-        geometry.setAttribute(
-            'normal',
-            new THREE.Float32BufferAttribute(meshNormals, 3)
-        )
-        geometry.setIndex(indices)
-
-        geometry.attributes.position!.needsUpdate = true
-        geometry.attributes.normal!.needsUpdate = true
-        if (geometry.index) geometry.index.needsUpdate = true
-        geometry.setDrawRange(0, indices.length)
-
-        const material = mesh.material
-        if (material instanceof THREE.MeshBasicMaterial) {
-            material.color.copy(color)
-            material.opacity = strokeOpacity
-            material.needsUpdate = true
-        }
+        updateGuideLine(mesh, rawPts, pressuresArr, normalsArr, {
+            shapeType: drawShapeType,
+            smoothPercentage: SMOOTH_PERCENTAGE,
+            optimizationThreshold: OPTIMIZATION_THRESHOLD,
+            color,
+            opacity: strokeOpacity,
+        })
     }
 
     const getPlaneIntersection = useCallback(
         (event: PointerEvent): StrokeSample | null => {
             const plane = planeRef.current
             if (!plane) return null
-
-            const canvas = gl.domElement
-            const rect = canvas.getBoundingClientRect()
-
-            const mouse = new THREE.Vector2(
-                ((event.clientX - rect.left) / rect.width) * 2 - 1,
-                -((event.clientY - rect.top) / rect.height) * 2 + 1
-            )
-
-            const raycaster = new THREE.Raycaster()
-            raycaster.setFromCamera(mouse, camera)
-
-            const intersects = raycaster.intersectObject(plane)
-            const intersection = intersects[0]
-            if (!intersection?.face) return null
-
-            return {
-                point: intersection.point.clone(),
-                normal: intersection.face.normal
-                    .clone()
-                    .transformDirection(intersection.object.matrixWorld)
-                    .normalize(),
-            }
+            return intersectPlaneAtPointer(event, gl.domElement, camera, plane)
         },
         [camera, gl]
     )

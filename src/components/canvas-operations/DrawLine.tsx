@@ -10,12 +10,14 @@ import { canvasRenderStore } from '../../hooks/useRenderSceneStore'
 import {
     smoothArray,
     smoothPoints,
-    filterPoints,
     getMirroredPoint,
     getActiveMaterial,
     applyTensionToPoints,
     getActiveMirrorModes,
     getAdaptiveStrokeWidth,
+    updateStrokeStrip,
+    createInitialLineMesh as createStrokeMesh,
+    intersectPlaneAtPointer,
     generateCirclePointsWorld,
     getSnappedLinePointsInPlane,
     generateSemiCircleOpenArcWorld,
@@ -154,28 +156,7 @@ const DrawLine = () => {
         (event: PointerEvent): StrokeSample | null => {
             const plane = planeRef.current
             if (!plane) return null
-
-            const rect = gl.domElement.getBoundingClientRect()
-
-            const mouse = new THREE.Vector2(
-                ((event.clientX - rect.left) / rect.width) * 2 - 1,
-                -((event.clientY - rect.top) / rect.height) * 2 + 1
-            )
-
-            const raycaster = new THREE.Raycaster()
-            raycaster.setFromCamera(mouse, camera)
-
-            const intersects = raycaster.intersectObject(plane)
-            const intersection = intersects[0]
-            if (!intersection?.face) return null
-
-            return {
-                point: intersection.point.clone(),
-                normal: intersection.face.normal
-                    .clone()
-                    .transformDirection(intersection.object.matrixWorld)
-                    .normalize(),
-            }
+            return intersectPlaneAtPointer(event, gl.domElement, camera, plane)
         },
         [camera, gl]
     )
@@ -456,29 +437,14 @@ const DrawLine = () => {
      * that is preserved: the four strips merge on pointer-up anyway.
      */
     function createInitialLineMesh(): THREE.Mesh {
-        const maxVertices = MAX_POINTS * 4
-
-        const geometry = new THREE.BufferGeometry()
-        geometry.setAttribute(
-            'position',
-            new THREE.BufferAttribute(new Float32Array(maxVertices * 3), 3)
-        )
-        geometry.setAttribute(
-            'normal',
-            new THREE.BufferAttribute(new Float32Array(maxVertices * 3), 3)
-        )
-        geometry.setIndex(
-            new THREE.BufferAttribute(new Uint32Array(MAX_POINTS * 24), 1)
-        )
-        geometry.setDrawRange(0, 0)
-
-        const material = getActiveMaterial(
-            activeMaterialType,
+        const mesh = createStrokeMesh(
+            strokeColor,
             strokeOpacity,
-            strokeColor
+            activeMaterialType,
+            MAX_POINTS,
+            false,
+            0
         )
-
-        const mesh = new THREE.Mesh(geometry, material)
         scene.add(mesh)
         return mesh
     }
@@ -579,182 +545,22 @@ const DrawLine = () => {
         normalsArr: THREE.Vector3[]
     ): void {
         if (!mesh) return
-        if (rawPts.length < 2) return
 
-        const geometry = mesh.geometry
-
-        let pts = rawPts
-        let pressures = pressuresArr
-        let finalNormals = normalsArr
-
-        if (drawShapeType === 'free_hand' && !tensionModeRef.current) {
-            pts = smoothPoints(rawPts, SMOOTH_PERCENTAGE)
-            pressures = smoothArray(pressuresArr, SMOOTH_PERCENTAGE)
-            const filteredResult = filterPoints(
-                pts,
-                pressures,
-                normalsArr,
-                OPTIMIZATION_THRESHOLD
-            )
-            pts = filteredResult.filteredPts
-            pressures = filteredResult.filteredPressures
-            finalNormals = filteredResult.filteredNormals
-        } else if (drawShapeType === 'straight') {
-            const filteredResult = filterPoints(
-                pts,
-                pressures,
-                normalsArr,
-                OPTIMIZATION_THRESHOLD
-            )
-            pts = filteredResult.filteredPts
-            pressures = filteredResult.filteredPressures
-            finalNormals = filteredResult.filteredNormals
-        }
-
-        if (pts.length < 2) return
-
-        const positions: number[] = []
-        const meshNormals: number[] = []
-        const indices: number[] = []
-        const colors: number[] = []
-
-        const baseColor = new THREE.Color(strokeColor)
-
-        const tangents: THREE.Vector3[] = []
-        for (let i = 0; i < pts.length - 1; i++) {
-            tangents.push(
-                new THREE.Vector3().subVectors(pts[i + 1]!, pts[i]!).normalize()
-            )
-        }
-
-        if (tangents.length === 0) {
-            tangents.push(new THREE.Vector3(1, 0, 0))
-        }
-
-        const fallbackNormal = new THREE.Vector3(0, 1, 0)
-        const firstNormal = finalNormals[0] ?? fallbackNormal
-        const firstTangent = tangents[0]!
-
-        const transportedRights: THREE.Vector3[] = []
-        const right = new THREE.Vector3()
-            .crossVectors(firstNormal, firstTangent)
-            .normalize()
-
-        if (right.lengthSq() < 1e-6) {
-            right.set(0, 1, 0)
-            if (Math.abs(firstTangent.dot(right)) > 0.99) right.set(1, 0, 0)
-            right.crossVectors(firstNormal, firstTangent).normalize()
-        }
-        transportedRights.push(right.clone())
-
-        for (let i = 1; i < tangents.length; i++) {
-            const prevT = tangents[i - 1]!
-            const currT = tangents[i]!
-            const axis = new THREE.Vector3().crossVectors(prevT, currT)
-            const angle = Math.acos(
-                THREE.MathUtils.clamp(prevT.dot(currT), -1, 1)
-            )
-
-            if (axis.lengthSq() < 1e-6 || angle === 0) {
-                transportedRights.push(transportedRights[i - 1]!.clone())
-            } else {
-                const q = new THREE.Quaternion().setFromAxisAngle(
-                    axis.normalize(),
-                    angle
-                )
-                transportedRights.push(
-                    transportedRights[i - 1]!.clone()
-                        .applyQuaternion(q)
-                        .normalize()
-                )
-            }
-        }
-
-        for (let i = 0; i < pts.length; i++) {
-            const curr = pts[i]!
-            const tangent =
-                i === pts.length - 1
-                    ? (tangents[i - 1] ?? firstTangent)
-                    : (tangents[i] ?? firstTangent)
-            const rightVec =
-                transportedRights[i] ??
-                transportedRights[transportedRights.length - 1]!
-            const up = new THREE.Vector3()
-                .crossVectors(tangent, rightVec)
-                .normalize()
-
-            const { w: halfW, h: halfH } = widthAt(pressures, i, pts.length)
-
-            const tl = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, -halfW)
-                .addScaledVector(up, halfH)
-            const tr = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, halfW)
-                .addScaledVector(up, halfH)
-            const br = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, halfW)
-                .addScaledVector(up, -halfH)
-            const bl = new THREE.Vector3()
-                .copy(curr)
-                .addScaledVector(rightVec, -halfW)
-                .addScaledVector(up, -halfH)
-
-            const normal = (finalNormals[i] ?? firstNormal).clone()
-            const baseIdx = positions.length / 3
-
-            for (const v of [tl, tr, br, bl, tl, tr, br, bl]) {
-                positions.push(v.x, v.y, v.z)
-                meshNormals.push(normal.x, normal.y, normal.z)
-                colors.push(
-                    baseColor.r,
-                    baseColor.g,
-                    baseColor.b,
-                    strokeOpacity
-                )
-            }
-
-            if (i > 0) {
-                const prevBase = baseIdx - 4
-                if (stripId === 0) {
-                    indices.push(prevBase, prevBase + 1, baseIdx + 1)
-                    indices.push(prevBase, baseIdx + 1, baseIdx)
-                }
-                if (stripId === 1) {
-                    indices.push(prevBase + 1, prevBase + 2, baseIdx + 2)
-                    indices.push(prevBase + 1, baseIdx + 2, baseIdx + 1)
-                }
-                if (stripId === 2) {
-                    indices.push(prevBase + 2, prevBase + 3, baseIdx + 3)
-                    indices.push(prevBase + 2, baseIdx + 3, baseIdx + 2)
-                }
-                if (stripId === 3) {
-                    indices.push(prevBase + 3, prevBase, baseIdx)
-                    indices.push(prevBase + 3, baseIdx, baseIdx + 3)
-                }
-            }
-        }
-
-        geometry.setAttribute(
-            'position',
-            new THREE.Float32BufferAttribute(positions, 3)
+        updateStrokeStrip(
+            stripId,
+            OPTIMIZATION_THRESHOLD,
+            SMOOTH_PERCENTAGE,
+            drawShapeType,
+            mesh,
+            strokeWidth,
+            strokeOpacity,
+            strokeType,
+            strokeColor,
+            rawPts,
+            pressuresArr,
+            normalsArr,
+            !tensionModeRef.current
         )
-        geometry.setAttribute(
-            'normal',
-            new THREE.Float32BufferAttribute(meshNormals, 3)
-        )
-        geometry.setAttribute(
-            'color',
-            new THREE.Float32BufferAttribute(colors, 4)
-        )
-        geometry.setIndex(indices)
-
-        geometry.attributes.position!.needsUpdate = true
-        geometry.attributes.normal!.needsUpdate = true
-        if (geometry.index) geometry.index.needsUpdate = true
-        geometry.setDrawRange(0, indices.length)
     }
 
     /** Rebuilds every strip of the primary stroke and each mirrored copy. */
