@@ -652,7 +652,6 @@ An honest list. Nothing here is a surprise waiting to be discovered.
 | -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | **Merge does not persist**                   | A merged mesh has no samples, so nothing can rebuild it. Needs a storage format change. Nothing in the UI triggers it today. |
 | **Non-uniform scale on a rotated selection** | Transforms are stored as position, rotation and scale, and a sheared matrix cannot be decomposed into those three.           |
-| **Guide drawing state in plain `let`**       | Not refs, so a re-render mid-stroke wipes the in-progress guide.                                                             |
 | **Unused vertex colours**                    | Four floats per vertex that no stroke material reads. Enable `vertexColors` or drop the attribute.                           |
 | **The ribbon builder is duplicated**         | Roughly 150 lines, four near-identical copies, already drifting.                                                             |
 | **No error boundary**                        | Any throw blanks the editor.                                                                                                 |

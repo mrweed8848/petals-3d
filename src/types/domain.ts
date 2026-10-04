@@ -173,3 +173,25 @@ export interface MirrorStrokeData {
     pressures: number[]
     normals: THREE.Vector3[]
 }
+
+export interface GuideStrokeState {
+    startPoint: THREE.Vector3 | null
+    currentNormal: THREE.Vector3 | null
+    isDrawing: boolean
+    points: THREE.Vector3[]
+    pressures: number[]
+    normals: THREE.Vector3[]
+    currentMesh: THREE.Mesh | null
+}
+
+export function createGuideStroke(): GuideStrokeState {
+    return {
+        startPoint: null,
+        currentNormal: null,
+        isDrawing: false,
+        points: [],
+        pressures: [],
+        normals: [],
+        currentMesh: null,
+    }
+}

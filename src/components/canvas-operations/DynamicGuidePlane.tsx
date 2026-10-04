@@ -15,7 +15,11 @@ import {
     getSnappedLinePointsInPlane,
     generateSemiCircleOpenArcWorld,
 } from '../../helpers/drawHelper'
-import type { StrokeSample } from '../../types/domain'
+import {
+    createGuideStroke,
+    type GuideStrokeState,
+    type StrokeSample,
+} from '../../types/domain'
 
 export interface DynamicGuidePlaneProps {
     onDrawingFinished: (mesh: THREE.Mesh) => void
@@ -68,13 +72,24 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
     const OPTIMIZATION_THRESHOLD = 0.01
     const PLANE_WIDTH = 100
 
-    let startPoint: THREE.Vector3 | null = null
-    let currentNormal: THREE.Vector3 | null = null
-    let isDrawing = false
-    let points: THREE.Vector3[] = []
-    let pressures: number[] = []
-    let normals: THREE.Vector3[] = []
-    let currentMesh: THREE.Mesh | null = null
+    const strokeRef = useRef<GuideStrokeState>(createGuideStroke())
+
+    const attachPlane = useCallback(
+        (node: THREE.Mesh | null) => {
+            planeRef.current = node
+            if (node) return
+
+            const stroke = strokeRef.current
+            if (stroke.currentMesh) {
+                scene.remove(stroke.currentMesh)
+                stroke.currentMesh.geometry.dispose()
+                const material = stroke.currentMesh.material
+                if (!Array.isArray(material)) material.dispose()
+            }
+            strokeRef.current = createGuideStroke()
+        },
+        [scene]
+    )
 
     const resolved = themeStore((state) => state.resolved)
     const color = new THREE.Color(SCENE[resolved].guide)
@@ -393,42 +408,50 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
     )
 
     function startDrawing(event: PointerEvent): void {
+        const stroke = strokeRef.current
         if (event.pointerType !== pointerType) return
         if (!planeRef.current) return
 
-        isDrawing = true
-        points = []
-        pressures = []
-        normals = []
+        stroke.isDrawing = true
+        stroke.points = []
+        stroke.pressures = []
+        stroke.normals = []
 
         const intersection = getPlaneIntersection(event)
         if (!intersection) return
 
-        startPoint = intersection.point.clone()
-        currentNormal = intersection.normal.clone()
-        currentMesh = createInitialLineMesh()
+        stroke.startPoint = intersection.point.clone()
+        stroke.currentNormal = intersection.normal.clone()
+        stroke.currentMesh = createInitialLineMesh()
 
         const pressure = 1.0
 
-        points.push(startPoint.clone())
-        pressures.push(pressure)
-        normals.push(currentNormal)
+        stroke.points.push(stroke.startPoint.clone())
+        stroke.pressures.push(pressure)
+        stroke.normals.push(stroke.currentNormal)
 
         if (drawShapeType === 'free_hand') {
             const secondPoint = new THREE.Vector3()
-                .copy(startPoint)
+                .copy(stroke.startPoint)
                 .addScalar(0.001)
-            points.push(secondPoint)
-            pressures.push(pressure)
-            normals.push(currentNormal)
+            stroke.points.push(secondPoint)
+            stroke.pressures.push(pressure)
+            stroke.normals.push(stroke.currentNormal)
         }
 
-        updateLine(currentMesh, points, pressures, normals)
+        updateLine(
+            stroke.currentMesh,
+            stroke.points,
+            stroke.pressures,
+            stroke.normals
+        )
     }
 
     function continueDrawing(event: PointerEvent): void {
+        const stroke = strokeRef.current
         if (event.pointerType !== pointerType) return
-        if (!isDrawing || !planeRef.current || !currentMesh) return
+        if (!stroke.isDrawing || !planeRef.current || !stroke.currentMesh)
+            return
 
         const intersection = getPlaneIntersection(event)
         if (!intersection) return
@@ -438,64 +461,74 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
 
         if (drawShapeType === 'free_hand') {
             const newPoint = point.clone()
-            const last = points[points.length - 1]
+            const last = stroke.points[stroke.points.length - 1]
             if (last && newPoint.distanceTo(last) < DISTANCE_THRESHOLD) return
 
-            points.push(newPoint)
-            pressures.push(pressure)
-            normals.push(normal)
+            stroke.points.push(newPoint)
+            stroke.pressures.push(pressure)
+            stroke.normals.push(normal)
 
-            if (points.length > MAX_POINTS) {
-                points.shift()
-                pressures.shift()
-                normals.shift()
+            if (stroke.points.length > MAX_POINTS) {
+                stroke.points.shift()
+                stroke.pressures.shift()
+                stroke.normals.shift()
             }
 
-            updateLine(currentMesh, points, pressures, normals)
+            updateLine(
+                stroke.currentMesh,
+                stroke.points,
+                stroke.pressures,
+                stroke.normals
+            )
         } else if (drawShapeType === 'straight') {
-            if (!startPoint || !currentNormal) return
+            if (!stroke.startPoint || !stroke.currentNormal) return
 
             const { snappedEnd } = getSnappedLinePointsInPlane({
-                startPoint,
+                startPoint: stroke.startPoint,
                 currentPoint: point,
                 normal,
                 camera,
                 snapAngle: 1,
             })
 
-            points = [startPoint.clone(), snappedEnd.clone()]
-            pressures = [pressure, pressure]
-            normals = [currentNormal.clone(), normal.clone()]
+            stroke.points = [stroke.startPoint.clone(), snappedEnd.clone()]
+            stroke.pressures = [pressure, pressure]
+            stroke.normals = [stroke.currentNormal.clone(), normal.clone()]
 
-            updateLine(currentMesh, points, pressures, normals)
+            updateLine(
+                stroke.currentMesh,
+                stroke.points,
+                stroke.pressures,
+                stroke.normals
+            )
         } else if (drawShapeType === 'circle') {
-            if (!startPoint || !currentNormal) return
+            if (!stroke.startPoint || !stroke.currentNormal) return
 
-            const radius = startPoint.distanceTo(point)
+            const radius = stroke.startPoint.distanceTo(point)
             const { circlePoints, circleNormals } = generateCirclePointsWorld(
-                startPoint,
-                currentNormal,
+                stroke.startPoint,
+                stroke.currentNormal,
                 radius
             )
 
             updateLine(
-                currentMesh,
+                stroke.currentMesh,
                 circlePoints,
                 Array(circlePoints.length).fill(pressure),
                 circleNormals
             )
         } else if (drawShapeType === 'arc') {
-            if (!startPoint || !currentNormal) return
+            if (!stroke.startPoint || !stroke.currentNormal) return
 
-            const radius = startPoint.distanceTo(point)
+            const radius = stroke.startPoint.distanceTo(point)
             const { arcPoints, arcNormals } = generateSemiCircleOpenArcWorld(
-                startPoint,
-                currentNormal,
+                stroke.startPoint,
+                stroke.currentNormal,
                 radius
             )
 
             updateLine(
-                currentMesh,
+                stroke.currentMesh,
                 arcPoints,
                 Array(arcPoints.length).fill(pressure),
                 arcNormals
@@ -508,6 +541,7 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
         ribbonNormals: THREE.Vector3[],
         planeNormal: THREE.Vector3
     ): void {
+        const stroke = strokeRef.current
         setOgGuidePoints(ribbonPoints)
         setOgGuideNormals(ribbonNormals)
 
@@ -534,10 +568,10 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
         ribbonMesh.userData.type = 'OG_GUIDE_PLANE'
         scene.add(ribbonMesh)
 
-        if (currentMesh) {
-            scene.remove(currentMesh)
-            currentMesh.geometry.dispose()
-            const material = currentMesh.material
+        if (stroke.currentMesh) {
+            scene.remove(stroke.currentMesh)
+            stroke.currentMesh.geometry.dispose()
+            const material = stroke.currentMesh.material
             if (!Array.isArray(material)) material.dispose()
         }
 
@@ -545,42 +579,49 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
     }
 
     function stopDrawing(event: PointerEvent): void {
-        if (!isDrawing || !planeRef.current) return
+        const stroke = strokeRef.current
+        if (!stroke.isDrawing || !planeRef.current) return
 
         const intersection = getPlaneIntersection(event)
 
         if (drawShapeType === 'free_hand' || drawShapeType === 'straight') {
-            if (!currentMesh || !startPoint || points.length < 2) {
-                if (currentMesh) scene.remove(currentMesh)
-                currentMesh = null
-                startPoint = null
+            if (
+                !stroke.currentMesh ||
+                !stroke.startPoint ||
+                stroke.points.length < 2
+            ) {
+                if (stroke.currentMesh) scene.remove(stroke.currentMesh)
+                stroke.currentMesh = null
+                stroke.startPoint = null
                 return
             }
 
             if (intersection) {
-                finishRibbon(points, normals, intersection.normal)
+                finishRibbon(stroke.points, stroke.normals, intersection.normal)
             }
         } else if (
             (drawShapeType === 'circle' || drawShapeType === 'arc') &&
-            startPoint &&
-            currentNormal &&
-            currentMesh
+            stroke.startPoint &&
+            stroke.currentNormal &&
+            stroke.currentMesh
         ) {
             const lastPoint =
-                intersection?.point ?? points[points.length - 1] ?? startPoint
-            const radius = startPoint.distanceTo(lastPoint)
-            const pressure = pressures[0] ?? 1.0
+                intersection?.point ??
+                stroke.points[stroke.points.length - 1] ??
+                stroke.startPoint
+            const radius = stroke.startPoint.distanceTo(lastPoint)
+            const pressure = stroke.pressures[0] ?? 1.0
 
             const shape =
                 drawShapeType === 'circle'
                     ? generateCirclePointsWorld(
-                          startPoint,
-                          currentNormal,
+                          stroke.startPoint,
+                          stroke.currentNormal,
                           radius
                       )
                     : generateSemiCircleOpenArcWorld(
-                          startPoint,
-                          currentNormal,
+                          stroke.startPoint,
+                          stroke.currentNormal,
                           radius
                       )
 
@@ -592,7 +633,7 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
                     : shape.arcNormals
 
             updateLine(
-                currentMesh,
+                stroke.currentMesh,
                 shapePoints,
                 Array(shapePoints.length).fill(pressure),
                 shapeNormals
@@ -603,10 +644,10 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
             }
         }
 
-        currentMesh = null
-        startPoint = null
-        currentNormal = null
-        isDrawing = false
+        stroke.currentMesh = null
+        stroke.startPoint = null
+        stroke.currentNormal = null
+        stroke.isDrawing = false
     }
 
     return (
@@ -614,7 +655,7 @@ const DynamicGuidePlane = ({ onDrawingFinished }: DynamicGuidePlaneProps) => {
             {drawGuide && <SyncCameraFromMain planeRef={planeRef} />}
             {drawGuide && (
                 <mesh
-                    ref={planeRef}
+                    ref={attachPlane}
                     position={[0, 0, 0]}
                     rotation={[0, 0, 0]}
                     onPointerDown={(e) => startDrawing(e.nativeEvent)}
